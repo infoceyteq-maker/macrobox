@@ -6,9 +6,11 @@
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:pos": "tsx scripts/pos-local-test.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite": "0.5.12",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.118.0",
     "framer-motion": "14.6.0",
@@ -24,6 +26,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
     "typescript": "5.9.3"
   }
 }

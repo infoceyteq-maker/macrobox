@@ -51,12 +51,16 @@ No backend or upload UI is hard-coded because storage and upload-flow details we
 
 `lunchMenu` in the component preserves all supplied ingredients and macro values verbatim. Nutrition and health-related values should be substantiated and reviewed before publication. In particular, the Wednesday carbs/fat values appear inconsistent with its calorie value, but have intentionally not been changed here.
 
-## POS backend (schema + Server Actions)
+## POS backend + live Admin UI
 
-The backend-only POS/Restaurant Management layer is documented in `POS_BACKEND.md`. It adds:
+The POS/Restaurant Management layer is documented in `POS_BACKEND.md`; live setup, credentials, and verification results are in `POS_LIVE_TEST.md`. It adds:
 
 - `supabase/migrations/202610270001_pos_core.sql` — strict Supabase/PostgreSQL schema, RLS, order state machine, driver assignment, transport billing, and audit tables.
-- `app/actions/pos.ts` — typed Next.js Server Actions for orders, lifecycle transitions, delivery, cash settlement, transport rate, and catalog visibility.
-- `lib/pos/*` — shared types, schemas, Supabase server client, and the mirrored transition/transport helpers.
+- `supabase/migrations/202610270002_pos_isolated_schema.sql` — applies the core schema into `macrobox_pos` on the connected project without touching legacy `public.orders`.
+- `supabase/migrations/202610270003_pos_ui_directory_rpcs.sql` — read-only Driver/Customer directory RPCs for the dashboard.
+- `app/actions/pos.ts`, `app/actions/auth.ts` — typed Server Actions for orders, lifecycle transitions, delivery, cash settlement, transport rate, catalog writes, and login.
+- `app/login/page.tsx`, `app/pos/page.tsx`, `components/PosDashboard.tsx` — branded login and unified Admin/POS dashboard.
+- `lib/pos/*` — shared types, Zod schemas, Supabase clients, local PGlite live engine, and mirrored transition/transport helpers.
+- `scripts/pos-local-test.ts` — automated SQL-level lifecycle test (`npm run test:pos`).
 
-No POS frontend UI has been added, and the existing catalog UI is unchanged.
+The catalog remains at `/`; a “Staff / POS” link opens `/login` and `/pos`.

@@ -4,6 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { getPosEnv } from "./env";
 import { PosActionError } from "./errors";
+import { POS_SCHEMA } from "./config";
 
 /**
  * Creates a request-scoped Supabase client using the signed-in user's cookies.
@@ -12,12 +13,19 @@ import { PosActionError } from "./errors";
  */
 export async function createSupabaseServerClient(): Promise<SupabaseClient> {
   const env = getPosEnv();
+  if (!env.NEXT_PUBLIC_SUPABASE_URL || !env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    throw new PosActionError(
+      "SUPABASE_ENV_MISSING",
+      "Supabase URL or anon key is not configured.",
+    );
+  }
   const cookieStore = await cookies();
 
   return createServerClient(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
+      db: { schema: env.NEXT_PUBLIC_SUPABASE_SCHEMA || POS_SCHEMA },
       cookies: {
         getAll: () => cookieStore.getAll(),
         setAll: (cookiesToSet) => {
@@ -32,7 +40,7 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient> {
         },
       },
     },
-  );
+  ) as unknown as SupabaseClient;
 }
 
 export async function requirePosSession(): Promise<{

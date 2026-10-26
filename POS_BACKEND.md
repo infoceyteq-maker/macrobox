@@ -1,19 +1,28 @@
 # MacroBox POS & Restaurant Management — Backend Design
 
-This document covers the **backend only**. No POS frontend/UI components were added, and the existing lunch-catalog UI is untouched.
+This document covers the backend architecture and the live Admin/POS UI built on top of it. The original lunch-catalog UI remains at `/`; the staff portal is at `/login` and `/pos`.
 
 ## 1. Files added
 
 | Path | Purpose |
 | --- | --- |
 | `supabase/migrations/202610270001_pos_core.sql` | Complete Supabase/PostgreSQL schema, enums, constraints, RLS, audit tables, RPCs, and the authoritative order state machine. |
+| `supabase/migrations/202610270002_pos_isolated_schema.sql` | Applies the core SQL into the connected project's isolated `macrobox_pos` schema, preserving legacy `public.orders`. |
+| `supabase/migrations/202610270003_pos_ui_directory_rpcs.sql` | Read-only Driver/Customer directory RPCs used by the dashboard. |
+| `supabase/demo-seed.sql` | Optional verification seed: six role accounts, five weekday categories, and exact supplied catalog products with `0.00` price placeholders. |
 | `app/actions/pos.ts` | Next.js Server Actions for cart-to-order creation, lifecycle transitions, driver assignment, delivery, cash settlement, transport-rate config, and product visibility. |
 | `lib/pos/types.ts` | Shared TypeScript row types, enums, and `ActionResult<T>`. |
 | `lib/pos/schemas.ts` | Zod-validated Server Action inputs. |
 | `lib/pos/order-state-machine.ts` | Mirrors the normal RBAC transition matrix for server-side capability checks. The database remains authoritative. |
 | `lib/pos/transport.ts` | Pure estimator matching the SQL transport formula. |
 | `lib/pos/env.ts`, `lib/pos/supabase-server.ts`, `lib/pos/errors.ts` | Lazy env validation, cookie-based Supabase server client, and normalized action errors. |
-| `.env.example` | Required public Supabase env vars. |
+| `.env.example` | Required public Supabase env vars and live-mode switch. |
+| `app/actions/auth.ts` | Supabase/local sign-in, one-click demo sign-in, and sign-out Server Actions. |
+| `app/login/page.tsx` | Branded staff login with role demo buttons. |
+| `app/pos/page.tsx`, `components/PosDashboard.tsx` | Live unified Admin/POS dashboard: overview, orders, new order, menu admin, transport settings, and audit. |
+| `proxy.ts` | Refreshes Supabase auth or checks the local live-mode session cookie and protects `/pos`. |
+| `lib/pos/local-db.ts`, `lib/pos/local-session.ts`, `lib/pos/catalog-seed.ts` | Sandboxed PGlite live engine running the same SQL migration and RPCs. |
+| `scripts/pos-local-test.ts` | Automated local lifecycle test (`npm run test:pos`). |
 
 ## 2. Core entities
 
@@ -164,7 +173,14 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    ```bash
    NEXT_PUBLIC_SUPABASE_URL=...
    NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+   NEXT_PUBLIC_SUPABASE_SCHEMA=macrobox_pos
+   NEXT_PUBLIC_POS_LIVE_MODE=supabase
+   POS_DEMO_PASSWORD=... # optional, enables one-click demo sign-in
    ```
+
+   For sandboxed previews without outbound access to `*.supabase.co`, set
+   `NEXT_PUBLIC_POS_LIVE_MODE=local`. The app then runs the same migration in
+   PGlite in-process; no Supabase network call is made.
 
 2. Apply the migration with the Supabase CLI or paste it into the Supabase SQL Editor:
 
@@ -173,6 +189,11 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    # or
    psql "$DATABASE_URL" -f supabase/migrations/202610270001_pos_core.sql
    ```
+
+   On an existing project with conflicting `public.orders`, apply
+   `202610270002_pos_isolated_schema.sql` and
+   `202610270003_pos_ui_directory_rpcs.sql` instead, then set
+   `NEXT_PUBLIC_SUPABASE_SCHEMA=macrobox_pos`.
 
 3. Promote the first Admin through a controlled server-side/SQL process, for example:
 
@@ -235,8 +256,9 @@ await settleOrderAction({
 
 Admin can also call `transitionOrderStatusAction({ orderId, toStatus: "READY" })` directly from `PENDING`, or use `assignDriverAction({ ..., dispatch: true })`. Every skipped step is flagged in `order_status_history.is_admin_override`, so the unified dashboard remains fast **and** auditable.
 
-## 10. Explicit non-goals
+## 10. Scope notes
 
-- No frontend UI, React components, dashboard screens, or styling were added.
-- No menu copy, prices, macros, ingredients, health claims, addresses, or salary values were invented.
-- No live Supabase project was modified by this workspace change; the SQL is ready to apply as a migration.
+- A live Admin/POS UI and login are now included; see `POS_LIVE_TEST.md` for routes and verification.
+- No real prices, macros, ingredients, health claims, addresses, or salary values were invented. Seeded products use `0.00` as a “price pending” placeholder and preserve the supplied catalog copy verbatim.
+- The connected Supabase project was modified only inside the isolated `macrobox_pos` schema; the existing legacy `public.orders` table and its 7 rows were preserved.
+- Demo accounts and any temporary test transport rate are for verification only. The remote per-km rate was cleared back to `null` after testing.

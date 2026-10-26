@@ -109,6 +109,25 @@ export interface OrderRow {
   updated_at: string;
 }
 
+export interface OrderItemRow {
+  id: string;
+  order_id: string;
+  product_id: string | null;
+  title_snapshot: string;
+  ingredients_snapshot: JsonValue[];
+  macros_snapshot: JsonObject;
+  quantity: number;
+  unit_price: DecimalValue;
+  line_total: DecimalValue;
+  created_at: string;
+}
+
+export interface OrderStatusTransitionRow {
+  from_status: OrderStatus;
+  to_status: OrderStatus;
+  allowed_roles: AppRole[];
+}
+
 export interface OrderStatusHistoryRow {
   id: number;
   order_id: string;

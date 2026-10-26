@@ -31,6 +31,21 @@ import {
   toActionFailure,
 } from "@/lib/pos/errors";
 import { requirePosSession } from "@/lib/pos/supabase-server";
+import { loadDashboardData } from "@/lib/pos/dashboard";
+import { isLocalMode } from "@/lib/pos/config";
+import { requireLocalUserId } from "@/lib/pos/local-session";
+import {
+  localAssignDriver,
+  localCreateCategory,
+  localCreateOrder,
+  localGetActor,
+  localGetDeliverySettings,
+  localSetProductVisibility,
+  localSetTransportRate,
+  localTransition,
+  localUpsertProduct,
+} from "@/lib/pos/local-db";
+import type { DashboardData } from "@/lib/pos/dashboard-types";
 import type {
   ActionResult,
   AppUserRow,
@@ -88,6 +103,11 @@ async function performTransition(
     metadata?: Record<string, unknown>;
   },
 ): Promise<OrderRow> {
+  if (isLocalMode()) {
+    const userId = await requireLocalUserId();
+    return localTransition(userId, toStatus, input);
+  }
+
   const { supabase } = await requirePosSession();
 
   return callRpc<OrderRow>(supabase, "transition_order_status", {
@@ -108,6 +128,11 @@ export async function createOrderAction(
 ): Promise<ActionResult<OrderRow>> {
   return runAction(async () => {
     const parsed = createOrderSchema.parse(input);
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      return localCreateOrder(userId, parsed);
+    }
+
     const { supabase } = await requirePosSession();
 
     return callRpc<OrderRow>(supabase, "create_order_with_items", {
@@ -213,6 +238,11 @@ export async function assignDriverAction(
 ): Promise<ActionResult<OrderRow>> {
   return runAction(async () => {
     const parsed = assignDriverSchema.parse(input);
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      return localAssignDriver(userId, parsed);
+    }
+
     const { supabase } = await requirePosSession();
 
     return callRpc<OrderRow>(supabase, "assign_driver_to_order", {
@@ -273,6 +303,11 @@ export async function setTransportRateAction(
 ): Promise<ActionResult<DeliverySettingsRow>> {
   return runAction(async () => {
     const parsed = setTransportRateSchema.parse(input);
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      return localSetTransportRate(userId, parsed);
+    }
+
     const { supabase } = await requirePosSession();
 
     return callRpc<DeliverySettingsRow>(supabase, "set_transport_rate", {
@@ -288,6 +323,11 @@ export async function setProductVisibilityAction(
 ): Promise<ActionResult<ProductRow>> {
   return runAction(async () => {
     const parsed = setProductVisibilitySchema.parse(input);
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      return localSetProductVisibility(userId, parsed);
+    }
+
     const { supabase } = await requirePosSession();
 
     return callRpc<ProductRow>(supabase, "set_product_active", {
@@ -303,6 +343,11 @@ export async function createCategoryAction(
 ): Promise<ActionResult<CategoryRow>> {
   return runAction(async () => {
     const parsed = createCategorySchema.parse(input);
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      return localCreateCategory(userId, parsed);
+    }
+
     const { supabase } = await requirePosSession();
 
     const { data, error } = await supabase
@@ -333,6 +378,11 @@ export async function upsertProductAction(
 ): Promise<ActionResult<ProductRow>> {
   return runAction(async () => {
     const parsed = upsertProductSchema.parse(input);
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      return localUpsertProduct(userId, parsed);
+    }
+
     const { supabase } = await requirePosSession();
 
     const { data, error } = await supabase
@@ -361,6 +411,10 @@ export async function getDeliverySettingsAction(): Promise<
   ActionResult<DeliverySettingsRow>
 > {
   return runAction(async () => {
+    if (isLocalMode()) {
+      return localGetDeliverySettings();
+    }
+
     const { supabase } = await requirePosSession();
     const { data, error } = await supabase
       .from("delivery_settings")
@@ -379,6 +433,11 @@ export async function getDeliverySettingsAction(): Promise<
 /** Read helper so a dashboard can label the current session's capabilities. */
 export async function getCurrentActorAction(): Promise<ActionResult<AppUserRow>> {
   return runAction(async () => {
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      return localGetActor(userId);
+    }
+
     const { supabase, user } = await requirePosSession();
     const { data, error } = await supabase
       .from("app_users")
@@ -396,4 +455,9 @@ export async function getCurrentActorAction(): Promise<ActionResult<AppUserRow>>
 
     return data as AppUserRow;
   });
+}
+
+/** Full read model for the live POS/Admin dashboard. */
+export async function getDashboardDataAction(): Promise<ActionResult<DashboardData>> {
+  return runAction(() => loadDashboardData());
 }

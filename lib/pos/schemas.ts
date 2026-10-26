@@ -7,7 +7,7 @@ const jsonObject = z.record(z.string(), z.unknown());
 const jsonArray = z.array(z.unknown());
 
 const note = z.string().trim().min(1).max(1000).optional();
-const expectedVersion = z.number().int().positive().optional();
+const expectedVersion = z.number().int().min(0).optional();
 const expectedStatus = orderStatus.optional();
 
 export const transitionMetadataSchema = z
