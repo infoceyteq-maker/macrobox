@@ -58,9 +58,13 @@ The POS/Restaurant Management layer is documented in `POS_BACKEND.md`; live setu
 - `supabase/migrations/202610270001_pos_core.sql` — strict Supabase/PostgreSQL schema, RLS, order state machine, driver assignment, transport billing, and audit tables.
 - `supabase/migrations/202610270002_pos_isolated_schema.sql` — applies the core schema into `macrobox_pos` on the connected project without touching legacy `public.orders`.
 - `supabase/migrations/202610270003_pos_ui_directory_rpcs.sql` — read-only Driver/Customer directory RPCs for the dashboard.
-- `app/actions/pos.ts`, `app/actions/auth.ts` — typed Server Actions for orders, lifecycle transitions, delivery, cash settlement, transport rate, catalog writes, and login.
+- `supabase/migrations/202610270004_pos_clear_transport_rate.sql` — Admin-only clear-rate RPC for both schema layouts.
+- `app/actions/pos.ts`, `app/actions/auth.ts` — typed Server Actions for orders, lifecycle transitions, delivery, cash settlement, transport rate / clear-rate, catalog writes, and login.
 - `app/login/page.tsx`, `app/pos/page.tsx`, `components/PosDashboard.tsx` — branded login and unified Admin/POS dashboard.
+- `components/SignaturePad.tsx` — real drawn e-signature capture stored as PNG delivery evidence.
+- `app/orders/page.tsx`, `components/CustomerOrders.tsx` — protected customer order tracking with live status timeline.
+- `app/driver/page.tsx`, `components/DriverPortal.tsx` — focused Driver/Admin delivery portal with expected cash and signature capture.
 - `lib/pos/*` — shared types, Zod schemas, Supabase clients, local PGlite live engine, and mirrored transition/transport helpers.
 - `scripts/pos-local-test.ts` — automated SQL-level lifecycle test (`npm run test:pos`).
 
-The catalog remains at `/`; a “Staff / POS” link opens `/login` and `/pos`.
+The catalog remains at `/`; “Track my orders →” opens `/orders` and “Staff / POS →” opens `/login` and `/pos`. Drivers and Admins can also use `/driver`.

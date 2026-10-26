@@ -29,6 +29,10 @@ const MIGRATION_PATH = path.join(
   process.cwd(),
   "supabase/migrations/202610270001_pos_core.sql",
 );
+const CLEAR_RATE_MIGRATION_PATH = path.join(
+  process.cwd(),
+  "supabase/migrations/202610270004_pos_clear_transport_rate.sql",
+);
 
 const ROLE_LABELS: Record<AppRole, string> = {
   ADMIN: "Admin",
@@ -146,6 +150,9 @@ async function initDb(): Promise<PGlite> {
     "",
   );
   await db.exec(migration);
+
+  const clearRateMigration = await fs.readFile(CLEAR_RATE_MIGRATION_PATH, "utf8");
+  await db.exec(clearRateMigration);
 
   await db.exec(`
     create table if not exists public.local_auth_users (
@@ -373,6 +380,19 @@ export async function localSetTransportRate(
       tx,
       `select * from public.set_transport_rate($1, $2)`,
       [input.perKmRate, input.freeDistanceKm ?? null],
+    );
+    return serialize<DeliverySettingsRow>(row);
+  });
+}
+
+export async function localClearTransportRate(
+  userId: string,
+): Promise<DeliverySettingsRow> {
+  return asUser(userId, async (tx) => {
+    const row = await queryOne<AnyRow>(
+      tx,
+      `select * from public.clear_transport_rate()`,
+      [],
     );
     return serialize<DeliverySettingsRow>(row);
   });

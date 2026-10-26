@@ -6,7 +6,9 @@
 - Catalog: `/`
 - Staff login: `/login`
 - Unified Admin/POS dashboard: `/pos`
-- “Staff / POS →” link on the catalog opens the portal.
+- Customer order tracking: `/orders`
+- Focused Driver portal: `/driver`
+- “Track my orders →” and “Staff / POS →” links are on the catalog.
 
 The original Monday–Friday catalog UI, exact supplied copy, logo, fonts, brand greens, and meal images are unchanged.
 
@@ -140,15 +142,18 @@ NEXT_PUBLIC_POS_LIVE_MODE=supabase
   - Overview KPIs and live connection card.
   - Orders list and detail panel.
   - Standard transitions, Admin override, driver assignment, dispatch.
-  - Delivery e-signature reference, distance, cash collection with expected total.
+  - Drawn delivery e-signature, distance, cash collection with expected total.
   - Cash settlement to `CLOSED`.
   - New order form with product quantities and price-pending labels.
   - Menu admin: price edit, visibility, category/product create/update.
-  - Transport settings with the exact `max(distance - freeDistance, 0) × rate` formula.
+  - Transport settings with the exact `max(distance - freeDistance, 0) × rate` formula and Admin “Clear rate” control.
   - Status history and audit events.
-  - Role-aware tabs and sign-out.
-- `proxy.ts` — refreshes Supabase auth or checks the local session cookie; protects `/pos`.
-- `app/page.tsx` — catalog plus “Staff / POS →” link.
+  - Role-aware tabs, links to `/orders` and `/driver`, and sign-out.
+- `components/SignaturePad.tsx` — canvas e-signature capture producing a PNG data URI stored as delivery evidence.
+- `app/orders/page.tsx`, `components/CustomerOrders.tsx` — protected customer tracking with live status timeline, itemized totals, and refresh.
+- `app/driver/page.tsx`, `components/DriverPortal.tsx` — focused Driver/Admin delivery portal with assigned-order filtering, expected cash, drawn signature, distance, and delivery recording.
+- `proxy.ts` — refreshes Supabase auth or checks the local session cookie; protects `/pos`, `/orders`, and `/driver`.
+- `app/page.tsx` — catalog plus “Track my orders →” and “Staff / POS →” links.
 
 Driver RBAC was browser-tested: a Driver cannot see the Admin transport form or the New order tab.
 
@@ -176,7 +181,9 @@ npm run test:pos    # PASS
 - settlement reference,
 - 7 timeline rows (creation + 6 transitions),
 - audit events,
-- Driver blocked from Admin category creation.
+- Driver blocked from Admin category creation,
+- Driver blocked from clearing the transport rate,
+- Admin `clear_transport_rate()` returning the rate to `null`.
 
 ### Browser E2E on the live preview
 
@@ -205,6 +212,37 @@ Screenshots:
 - `screenshots/03-order-closed.png`
 - `screenshots/04-audit.png`
 - `screenshots/05-driver-dashboard.png`
+- `screenshots/06-customer-orders.png`
+- `screenshots/07-driver-portal.png`
+- `screenshots/08-drawn-signature.png`
+- `screenshots/09-clear-rate.png`
+- `screenshots/10-driver-role.png`
+
+### Continuation browser E2E
+
+A second focused browser pass verified the new customer tracking, Driver portal, drawn e-signature, and Admin clear-rate control:
+
+17/17 checks passed:
+
+1. `/orders` redirects unauthenticated visitors to `/login?next=/orders`.
+2. Login exposes “Track my orders” and “Driver portal”.
+3. Admin demo sign-in.
+4. Temporary transport rate set.
+5. PENDING order created.
+6. `ACCEPTED → PREPARING → READY`.
+7. Driver assigned and order dispatched.
+8. `/driver` shows the dispatched order.
+9. Drawn canvas e-signature captured as PNG data URI.
+10. Driver portal records `DELIVERED` with signature and matching cash.
+11. `/pos` settles the order to `CLOSED`.
+12. Admin “Clear rate” returns billing to unconfigured.
+13. Customer sees the closed order timeline at `/orders`.
+14. Driver role sees the recently closed assignment at `/driver`.
+15. Protected-route and role redirects work.
+16. Browser console errors: **none**.
+17. Unexpected failed network requests: **none**.
+
+The drawn signature is stored directly in `delivery_signature_url`; no external storage bucket was needed for verification.
 
 ### Remote Supabase SQL lifecycle test
 
@@ -221,6 +259,8 @@ A full lifecycle was also run directly against the connected project through the
 | Per-km rate after test | `null` (cleared) |
 
 A temporary test rate of `1.00/km` with `2.00 km` free was used only to exercise dynamic billing. The remote rate was reset to `null`; no business rate is stored.
+
+The Admin-only `macrobox_pos.clear_transport_rate()` RPC from migration `202610270004_pos_clear_transport_rate.sql` was also applied and verified remotely: an Admin can set and then clear a test rate, a Driver is blocked with `TRANSPORT_RATE_ADMIN_ONLY`, and the final remote `per_km_rate` is `null`.
 
 ---
 

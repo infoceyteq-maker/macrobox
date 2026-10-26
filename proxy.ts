@@ -8,7 +8,7 @@ import {
   SUPABASE_URL,
 } from "@/lib/pos/config";
 
-const PROTECTED_PREFIXES = ["/pos", "/admin"];
+const PROTECTED_PREFIXES = ["/pos", "/admin", "/orders", "/driver"];
 
 function redirectToLogin(request: NextRequest, pathname: string) {
   const loginUrl = request.nextUrl.clone();

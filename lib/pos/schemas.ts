@@ -14,7 +14,7 @@ export const transitionMetadataSchema = z
   .object({
     driverId: uuid.optional(),
     distanceKm: z.number().min(0).max(100000).optional(),
-    signatureUrl: z.string().trim().min(1).max(2048).optional(),
+    signatureUrl: z.string().trim().min(1).max(250000).optional(),
     cashCollectedAmount: z.number().min(0).optional(),
     cashSettlementReference: z.string().trim().min(1).max(200).optional(),
     note,
@@ -90,7 +90,7 @@ export const recordDeliverySchema = z
   .object({
     orderId: uuid,
     distanceKm: z.number().min(0).max(100000),
-    signatureUrl: z.string().trim().min(1).max(2048),
+    signatureUrl: z.string().trim().min(1).max(250000),
     cashCollectedAmount: z.number().min(0),
     driverId: uuid.optional(),
     expectedStatus,

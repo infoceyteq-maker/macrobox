@@ -9,6 +9,7 @@ This document covers the backend architecture and the live Admin/POS UI built on
 | `supabase/migrations/202610270001_pos_core.sql` | Complete Supabase/PostgreSQL schema, enums, constraints, RLS, audit tables, RPCs, and the authoritative order state machine. |
 | `supabase/migrations/202610270002_pos_isolated_schema.sql` | Applies the core SQL into the connected project's isolated `macrobox_pos` schema, preserving legacy `public.orders`. |
 | `supabase/migrations/202610270003_pos_ui_directory_rpcs.sql` | Read-only Driver/Customer directory RPCs used by the dashboard. |
+| `supabase/migrations/202610270004_pos_clear_transport_rate.sql` | Admin-only `clear_transport_rate()` RPC for returning billing to unconfigured; supports both `public` and `macrobox_pos` installs. |
 | `supabase/demo-seed.sql` | Optional verification seed: six role accounts, five weekday categories, and exact supplied catalog products with `0.00` price placeholders. |
 | `app/actions/pos.ts` | Next.js Server Actions for cart-to-order creation, lifecycle transitions, driver assignment, delivery, cash settlement, transport-rate config, and product visibility. |
 | `lib/pos/types.ts` | Shared TypeScript row types, enums, and `ActionResult<T>`. |
@@ -19,8 +20,11 @@ This document covers the backend architecture and the live Admin/POS UI built on
 | `.env.example` | Required public Supabase env vars and live-mode switch. |
 | `app/actions/auth.ts` | Supabase/local sign-in, one-click demo sign-in, and sign-out Server Actions. |
 | `app/login/page.tsx` | Branded staff login with role demo buttons. |
-| `app/pos/page.tsx`, `components/PosDashboard.tsx` | Live unified Admin/POS dashboard: overview, orders, new order, menu admin, transport settings, and audit. |
-| `proxy.ts` | Refreshes Supabase auth or checks the local live-mode session cookie and protects `/pos`. |
+| `app/pos/page.tsx`, `components/PosDashboard.tsx` | Live unified Admin/POS dashboard: overview, orders, new order, menu admin, transport settings, clear-rate control, and audit. |
+| `app/orders/page.tsx`, `components/CustomerOrders.tsx` | Protected customer order-tracking page with live status timeline and itemized totals. |
+| `app/driver/page.tsx`, `components/DriverPortal.tsx` | Focused Driver/Admin delivery portal with drawn e-signature, distance, cash collection, and assignment summaries. |
+| `components/SignaturePad.tsx` | Canvas-based drawn e-signature capture producing a PNG data URI stored as delivery evidence. |
+| `proxy.ts` | Refreshes Supabase auth or checks the local live-mode session cookie and protects `/pos`, `/orders`, and `/driver`. |
 | `lib/pos/local-db.ts`, `lib/pos/local-session.ts`, `lib/pos/catalog-seed.ts` | Sandboxed PGlite live engine running the same SQL migration and RPCs. |
 | `scripts/pos-local-test.ts` | Automated local lifecycle test (`npm run test:pos`). |
 
@@ -152,6 +156,7 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
 | `recordDeliveryAction` | Calculates/writes transport cost, e-signature, and cash; moves to `DELIVERED`. |
 | `settleOrderAction` | Records cash settlement reference; moves to `CLOSED`. |
 | `setTransportRateAction` | Admin-only `per_km_rate` / `free_distance_km` update. |
+| `clearTransportRateAction` | Admin-only `clear_transport_rate()` RPC; sets `per_km_rate` back to `null` without changing past orders. |
 | `setProductVisibilityAction` | Admin-only `is_active` toggle. |
 | `createCategoryAction`, `upsertProductAction` | Admin-only catalog writes. |
 | `getDeliverySettingsAction`, `getCurrentActorAction` | Read helpers for a future dashboard. |
@@ -188,11 +193,13 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    supabase db push
    # or
    psql "$DATABASE_URL" -f supabase/migrations/202610270001_pos_core.sql
+   psql "$DATABASE_URL" -f supabase/migrations/202610270004_pos_clear_transport_rate.sql
    ```
 
    On an existing project with conflicting `public.orders`, apply
-   `202610270002_pos_isolated_schema.sql` and
-   `202610270003_pos_ui_directory_rpcs.sql` instead, then set
+   `202610270002_pos_isolated_schema.sql`,
+   `202610270003_pos_ui_directory_rpcs.sql`, and
+   `202610270004_pos_clear_transport_rate.sql` instead, then set
    `NEXT_PUBLIC_SUPABASE_SCHEMA=macrobox_pos`.
 
 3. Promote the first Admin through a controlled server-side/SQL process, for example:
@@ -212,7 +219,7 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    });
    ```
 
-   The `120` above is only an illustrative value matching the formula example; it is not seeded by the migration.
+   The `120` above is only an illustrative value matching the formula example; it is not seeded by the migration. Admin can later call `clearTransportRateAction()` to return `per_km_rate` to `null` without changing historical orders.
 
 5. Add categories/products with `createCategoryAction()` and `upsertProductAction()` using verified data. Toggle visibility with `setProductVisibilityAction()`.
 
@@ -252,13 +259,13 @@ await settleOrderAction({
 });
 ```
 
-`cashCollectedAmount` must equal the order's `final_total` after transport is added. The `signatureUrl` is intentionally a generic string so it can reference Supabase Storage, an object key, or another approved signature store; storage policy was not supplied.
+`cashCollectedAmount` must equal the order's `final_total` after transport is added. The `signatureUrl` remains a generic string so it can reference Supabase Storage, an object key, or another approved signature store; storage policy was not supplied. The live UI now captures a real drawn signature with `components/SignaturePad.tsx` and stores its PNG data URI directly in this field, so no external storage bucket is required for verification.
 
 Admin can also call `transitionOrderStatusAction({ orderId, toStatus: "READY" })` directly from `PENDING`, or use `assignDriverAction({ ..., dispatch: true })`. Every skipped step is flagged in `order_status_history.is_admin_override`, so the unified dashboard remains fast **and** auditable.
 
 ## 10. Scope notes
 
-- A live Admin/POS UI and login are now included; see `POS_LIVE_TEST.md` for routes and verification.
+- A live Admin/POS UI, login, customer tracking page, focused Driver portal, drawn e-signature capture, and Admin clear-rate control are now included; see `POS_LIVE_TEST.md` for routes and verification.
 - No real prices, macros, ingredients, health claims, addresses, or salary values were invented. Seeded products use `0.00` as a “price pending” placeholder and preserve the supplied catalog copy verbatim.
 - The connected Supabase project was modified only inside the isolated `macrobox_pos` schema; the existing legacy `public.orders` table and its 7 rows were preserved.
 - Demo accounts and any temporary test transport rate are for verification only. The remote per-km rate was cleared back to `null` after testing.

@@ -5,9 +5,11 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import SignaturePad from "@/components/SignaturePad";
 import { signOutAction } from "@/app/actions/auth";
 import {
   assignDriverAction,
+  clearTransportRateAction,
   createCategoryAction,
   createOrderAction,
   dispatchOrderAction,
@@ -727,16 +729,13 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
         <p className="text-xs text-[#6f7a74]">
           Expected cash after transport: <span className="font-semibold">{expected.toFixed(2)}</span>
         </p>
-        <Field label="E-signature URL or reference">
-          <input
-            className={inputClass}
-            value={deliveryForm.signatureUrl}
-            onChange={(event) =>
-              setDeliveryForm((prev) => ({ ...prev, signatureUrl: event.target.value }))
-            }
-            placeholder="Paste uploaded signature URL or test reference"
-          />
-        </Field>
+        <SignaturePad
+          value={deliveryForm.signatureUrl}
+          onChange={(value) =>
+            setDeliveryForm((prev) => ({ ...prev, signatureUrl: value }))
+          }
+          disabled={busy}
+        />
         {isAdmin ? (
           <Field label="Delivering driver">
             <select
@@ -1550,6 +1549,18 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
   }
 
   function renderSettings() {
+    function clearRate() {
+      if (!isAdmin) {
+        setError("Only Admin can clear the transport rate.");
+        return;
+      }
+      void run(
+        "Clear transport rate",
+        () => clearTransportRateAction(),
+        "Transport rate cleared. Delivery billing is now unconfigured.",
+      );
+    }
+
     function submit(event: FormEvent<HTMLFormElement>) {
       event.preventDefault();
       if (!isAdmin) {
@@ -1630,9 +1641,24 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
                   }
                 />
               </Field>
-              <ActionButton type="submit" disabled={busy || !rateForm.perKmRate.trim()}>
-                Save transport settings
-              </ActionButton>
+              <div className="flex flex-wrap gap-3">
+                <ActionButton type="submit" disabled={busy || !rateForm.perKmRate.trim()}>
+                  Save transport settings
+                </ActionButton>
+                <ActionButton
+                  type="button"
+                  variant="secondary"
+                  onClick={clearRate}
+                  disabled={busy || data.settings.per_km_rate === null}
+                >
+                  Clear rate
+                </ActionButton>
+              </div>
+              {data.settings.per_km_rate !== null ? (
+                <p className="text-xs text-[#6f7a74]">
+                  Clearing the rate stops new transport calculations without changing past orders.
+                </p>
+              ) : null}
             </form>
           ) : (
             <EmptyState
@@ -1740,6 +1766,14 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
             <Link href="/" className={secondary}>
               Catalog
             </Link>
+            <Link href="/orders" className={secondary}>
+              My orders
+            </Link>
+            {role === "DRIVER" || role === "ADMIN" ? (
+              <Link href="/driver" className={secondary}>
+                Driver view
+              </Link>
+            ) : null}
             <ActionButton variant="secondary" onClick={handleSignOut} disabled={busy}>
               Sign out
             </ActionButton>

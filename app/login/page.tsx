@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { Suspense, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signInAction, signInDemoAction } from "@/app/actions/auth";
@@ -26,6 +27,7 @@ const primary =
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hasNextPath = searchParams.has("next");
   const nextPath = searchParams.get("next") || "/pos";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,10 +35,16 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  function complete() {
+  function complete(role?: AppRole) {
     setError(null);
-    setMessage("Signed in. Opening the POS dashboard…");
-    router.push(nextPath.startsWith("/") ? nextPath : "/pos");
+    setMessage("Signed in. Opening your workspace…");
+    let target = nextPath;
+    if (!hasNextPath) {
+      if (role === "CUSTOMER") target = "/orders";
+      else if (role === "DRIVER") target = "/driver";
+      else target = "/pos";
+    }
+    router.push(target.startsWith("/") ? target : "/pos");
     router.refresh();
   }
 
@@ -63,7 +71,7 @@ function LoginForm() {
         setError(result.error);
         return;
       }
-      complete();
+      complete(role);
     });
   }
 
@@ -181,6 +189,15 @@ function LoginForm() {
                   <span className="mt-1 block text-xs text-[#6f7a74]">{item.hint}</span>
                 </button>
               ))}
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-xs font-semibold text-[#5f7b64]">
+              <Link href="/login?next=/orders" className="underline-offset-4 hover:underline">
+                Track my orders
+              </Link>
+              <Link href="/login?next=/driver" className="underline-offset-4 hover:underline">
+                Driver portal
+              </Link>
             </div>
 
             <p className="mt-8 text-center text-xs leading-5 text-[#7b857f]">

@@ -3,6 +3,7 @@ import {
   getLocalDb,
   LOCAL_DEMO_USERS,
   localAssignDriver,
+  localClearTransportRate,
   localCreateCategory,
   localCreateOrder,
   localGetDeliverySettings,
@@ -145,6 +146,20 @@ async function main() {
     persistedSettings.per_km_rate !== null,
     String(persistedSettings.per_km_rate),
   );
+
+  let clearBlocked = false;
+  try {
+    await localClearTransportRate(DRIVER.id);
+  } catch (error) {
+    clearBlocked =
+      error instanceof Error && /ADMIN|FORBIDDEN|permission/i.test(error.message);
+  }
+  check("Driver blocked from clearing transport rate", clearBlocked);
+
+  const cleared = await localClearTransportRate(ADMIN.id);
+  check("Admin cleared transport rate", cleared.per_km_rate === null);
+  const afterClear = await localGetDeliverySettings();
+  check("Cleared rate persisted", afterClear.per_km_rate === null);
 
   console.log("\nALL LOCAL POS CHECKS PASSED");
 }
