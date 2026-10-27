@@ -115,9 +115,13 @@ export default function FinancialsPanel({ orders, settings, schema }: Financials
           <Stat label="Awaiting settlement" value={formatAmount(unsettled)} hint="DELIVERED orders" />
           <Stat label="Price-pending orders" value={String(pricePending)} hint="Needs approved price" />
           <Stat
-            label="Transport rate"
-            value={settings.per_km_rate === null ? "Not configured" : formatAmount(settings.per_km_rate)}
-            hint={`Free ${formatAmount(settings.free_distance_km)} km`}
+            label="Transport model"
+            value={
+              settings.is_configured && settings.rate_model === "TIERED_LKR"
+                ? `${settings.currency_code} tiered`
+                : "Not configured"
+            }
+            hint="0–3 km LKR 150 · 4th +120 · 5th +100 · >5 +60/km"
           />
         </div>
       </section>

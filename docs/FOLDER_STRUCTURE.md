@@ -8,7 +8,7 @@ app/
     auth.ts                    # local/Supabase staff sign-in, sign-out
     customer-auth.ts           # public customer registration + email/phone sign-in
     employees.ts               # Admin-only employee profile/role/status updates
-    pos.ts                     # orders, lifecycle, transport, menu, delivery, settlement
+    pos.ts                     # orders, lifecycle, tiered transport activation, menu, delivery, settlement
     public-menu.ts             # anonymous active-menu read for cart/catalog
   bill/
     [orderId]/page.tsx         # protected digital e-bill route
@@ -79,6 +79,7 @@ supabase/migrations/
   202610270006_customer_auth.sql     # phone-aware Auth profile trigger + lookup RPC
   202610270007_customer_phone_normalization.sql # digits-only E.164 phone matching
   202610270008_expose_pos_api_schema.sql # Supabase PostgREST profile exposure
+  202610270009_tiered_transport_rate.sql  # approved LKR distance tiers + calculator
 ```
 
 ## Production routing
@@ -96,5 +97,5 @@ supabase/migrations/
 - Sage `#DCE6DA`, interactive greens `#8FBC8F` / `#7CA982`, cream `#F7F6F2`, charcoal `#2E3033`.
 - Cards/buttons/inputs use raised or inset extruded shadows from `components/ui/neu.ts` and `app/globals.css`.
 - Print output is black-and-white, 80mm, shadow-free, and isolated with `.thermal-print`.
-- No real prices, rates, salaries, addresses, health claims, or Google Maps key were invented.
-- `0.00` remains a “price pending” placeholder; Admin must enter approved values before production.
+- The approved LKR distance-tiered transport rate is implemented exactly in `lib/pos/transport.ts` and SQL. No real meal prices, salaries, addresses, health claims, or Google Maps key were invented.
+- Product `0.00` remains a “price pending” placeholder; Admin must enter approved values before production.

@@ -6,6 +6,10 @@ import { CONTACT_LINE } from "@/lib/brand";
 import { notify } from "@/lib/ui/toast";
 import { cn, formatAmount, formatDate, NEU, shortId } from "@/components/ui/neu";
 import type { DashboardOrder } from "@/lib/pos/dashboard-types";
+import {
+  isTransportConfigured,
+  TRANSPORT_TIER_LABELS,
+} from "@/lib/pos/transport";
 import type {
   AppRole,
   DecimalValue,
@@ -63,8 +67,7 @@ export default function EBill({
   const food = formatAmount(foodTotal ?? order.total_food_cost);
   const transport = formatAmount(transportCost ?? order.transport_cost);
   const total = formatAmount(finalTotal ?? order.final_total);
-  const rate = settings?.per_km_rate ?? null;
-  const freeDistance = settings?.free_distance_km ?? 2;
+  const transportConfigured = isTransportConfigured(settings);
   const billUrl = `/bill/${order.id}`;
 
   async function shareBill() {
@@ -176,10 +179,12 @@ export default function EBill({
             <span>{formatAmount(distanceKm)} km</span>
           </div>
         ) : null}
-        {rate !== null ? (
-          <div className="flex justify-between gap-3 text-xs text-[#6f7a74]">
-            <span>Formula</span>
-            <span>max(km − {formatAmount(freeDistance)}, 0) × {formatAmount(rate)}</span>
+        {transportConfigured ? (
+          <div className="space-y-1 text-xs text-[#6f7a74]">
+            <p className="font-semibold text-[#3f6b45]">LKR distance-tiered transport</p>
+            {TRANSPORT_TIER_LABELS.map((label) => (
+              <p key={label}>{label}</p>
+            ))}
           </div>
         ) : (
           <p className="text-xs text-[#8a542b]">Transport rate is not configured by Admin yet.</p>

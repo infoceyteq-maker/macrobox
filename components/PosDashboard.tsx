@@ -14,6 +14,7 @@ import { notify } from "@/lib/ui/toast";
 import { signOutAction } from "@/app/actions/auth";
 import {
   assignDriverAction,
+  activateTieredTransportRateAction,
   clearTransportRateAction,
   createCategoryAction,
   createOrderAction,
@@ -21,7 +22,6 @@ import {
   getDashboardDataAction,
   recordDeliveryAction,
   setProductVisibilityAction,
-  setTransportRateAction,
   settleOrderAction,
   transitionOrderStatusAction,
   upsertProductAction,
@@ -31,6 +31,13 @@ import type {
   DashboardOrder,
   DirectoryUser,
 } from "@/lib/pos/dashboard-types";
+import {
+  calculateTransportCost,
+  formatTransportTierSummary,
+  getTransportTierConfig,
+  isTransportConfigured,
+  TRANSPORT_TIER_LABELS,
+} from "@/lib/pos/transport";
 import {
   ORDER_STATUSES,
   type ActionResult,
@@ -117,11 +124,6 @@ interface DeliveryFormState {
 interface DispatchFormState {
   driverId: string;
   note: string;
-}
-
-interface RateFormState {
-  perKmRate: string;
-  freeDistanceKm: string;
 }
 
 interface CategoryFormState {
@@ -305,10 +307,6 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
   });
   const [settlementRef, setSettlementRef] = useState("");
   const [overrideStatus, setOverrideStatus] = useState<OrderStatus>("ACCEPTED");
-  const [rateForm, setRateForm] = useState<RateFormState>({
-    perKmRate: "",
-    freeDistanceKm: "",
-  });
   const [categoryForm, setCategoryForm] = useState<CategoryFormState>({
     name: "",
     slug: "",
@@ -393,14 +391,6 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
     }
     knownStatusesRef.current = current;
   }, [data.orders]);
-
-  useEffect(() => {
-    setRateForm({
-      perKmRate:
-        data.settings.per_km_rate === null ? "" : String(asNumber(data.settings.per_km_rate)),
-      freeDistanceKm: String(asNumber(data.settings.free_distance_km)),
-    });
-  }, [data.settings]);
 
   useEffect(() => {
     if (!selectedOrder) return;
@@ -561,14 +551,14 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
                 <span className="text-[#6f7a74]">({data.roleLabels[role]})</span>
               </div>
               <div className={`${inset} px-4 py-3`}>
-                <span className="font-semibold">Transport rate:</span>{" "}
-                {data.settings.per_km_rate === null
-                  ? "Not configured"
-                  : `${formatAmount(data.settings.per_km_rate)} / km`}
+                <span className="font-semibold">Transport model:</span>{" "}
+                {isTransportConfigured(data.settings)
+                  ? `${getTransportTierConfig(data.settings).currency} distance-tiered`
+                  : "Not configured"}
               </div>
               <div className={`${inset} px-4 py-3`}>
-                <span className="font-semibold">Free distance:</span>{" "}
-                {formatAmount(data.settings.free_distance_km)} km
+                <span className="font-semibold">Tier 1:</span>{" "}
+                {TRANSPORT_TIER_LABELS[0]}
               </div>
               <p className="text-xs leading-5 text-[#7b857f]">
                 Product prices marked “Price pending” are 0.00 placeholders. Set approved
@@ -717,18 +707,20 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
   }
 
   function expectedCash(order: DashboardOrder, distanceKm: number): number {
-    const rate = data.settings.per_km_rate;
-    if (rate === null) return asNumber(order.total_food_cost);
-    const free = asNumber(data.settings.free_distance_km);
-    const transport = Math.max(distanceKm - free, 0) * asNumber(rate);
-    return asNumber(order.total_food_cost) + transport;
+    const food = asNumber(order.total_food_cost);
+    if (!isTransportConfigured(data.settings)) return food;
+    const transport = calculateTransportCost(
+      distanceKm,
+      getTransportTierConfig(data.settings),
+    );
+    return Number((food + transport).toFixed(2));
   }
 
   function renderDeliveryPanel(order: DashboardOrder) {
     if (!canDriver || FINAL_STATUSES.includes(order.status)) return null;
     const distance = Number(deliveryForm.distanceKm || 0);
     const expected = expectedCash(order, Number.isFinite(distance) ? distance : 0);
-    const rateMissing = data.settings.per_km_rate === null;
+    const rateMissing = !isTransportConfigured(data.settings);
 
     return (
       <div className="space-y-3">
@@ -737,7 +729,7 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
         </h3>
         {rateMissing ? (
           <div className="rounded-2xl bg-[#f7e2de] px-4 py-3 text-sm text-[#8a3b2f]">
-            Admin has not configured the per-km rate. Delivery will be rejected until it is set.
+            Admin has not activated the approved LKR tiered transport rate. Delivery will be rejected until it is set.
           </div>
         ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1678,6 +1670,21 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
   }
 
   function renderSettings() {
+    const configured = isTransportConfigured(data.settings);
+    const tiers = getTransportTierConfig(data.settings);
+
+    function activateRate() {
+      if (!isAdmin) {
+        setError("Only Admin can activate the transport rate.");
+        return;
+      }
+      void run(
+        "Activate tiered transport rate",
+        () => activateTieredTransportRateAction(),
+        "Approved LKR distance-tiered transport rate activated.",
+      );
+    }
+
     function clearRate() {
       if (!isAdmin) {
         setError("Only Admin can clear the transport rate.");
@@ -1690,109 +1697,64 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
       );
     }
 
-    function submit(event: FormEvent<HTMLFormElement>) {
-      event.preventDefault();
-      if (!isAdmin) {
-        setError("Only Admin can configure the transport rate.");
-        return;
-      }
-      void run(
-        "Set transport rate",
-        () =>
-          setTransportRateAction({
-            perKmRate: Number(rateForm.perKmRate || 0),
-            ...(rateForm.freeDistanceKm.trim()
-              ? { freeDistanceKm: Number(rateForm.freeDistanceKm) }
-              : {}),
-          }),
-        "Transport rate updated.",
-      );
-    }
-
     return (
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <SectionCard title="Delivery settings" subtitle="Readable by all signed-in roles">
+        <SectionCard title="Approved transport tiers" subtitle="Readable by all signed-in roles">
           <div className="space-y-4">
             <div className={`${inset} px-4 py-4`}>
-              <p className="text-xs uppercase tracking-widest text-[#7b857f]">Per-km rate</p>
+              <p className="text-xs uppercase tracking-widest text-[#7b857f]">Status</p>
               <p className="mt-2 font-display text-2xl font-bold">
-                {data.settings.per_km_rate === null
-                  ? "Not configured"
-                  : formatAmount(data.settings.per_km_rate)}
+                {configured ? `${tiers.currency} tiered billing active` : "Not configured"}
               </p>
             </div>
-            <div className={`${inset} px-4 py-4`}>
-              <p className="text-xs uppercase tracking-widest text-[#7b857f]">Free distance</p>
-              <p className="mt-2 font-display text-2xl font-bold">
-                {formatAmount(data.settings.free_distance_km)} km
-              </p>
+            <div className={`${inset} space-y-2 px-4 py-4 text-sm leading-6 text-[#4b5550]`}>
+              {TRANSPORT_TIER_LABELS.map((label) => (
+                <p key={label}>{label}</p>
+              ))}
             </div>
-            <div className={`${inset} px-4 py-4 text-sm leading-6 text-[#4b5550]`}>
-              Formula:{" "}
-              <span className="font-semibold">
-                max(distanceKm − freeDistanceKm, 0) × perKmRate
-              </span>
-              . No rate is seeded by the migration; Admin must set an approved value.
+            <div className={`${inset} px-4 py-4 text-xs leading-5 text-[#6f7a74]`}>
+              {formatTransportTierSummary(tiers)}
             </div>
-            <p className="text-xs text-[#6f7a74]">Last updated: {formatDate(data.settings.updated_at)}</p>
+            <p className="text-xs text-[#6f7a74]">
+              Last updated: {formatDate(data.settings.updated_at)}
+            </p>
           </div>
         </SectionCard>
 
         <SectionCard
-          title={isAdmin ? "Configure transport rate" : "Transport rate (Admin only)"}
-          subtitle="Used only when a delivery is recorded"
+          title={isAdmin ? "Activate transport billing" : "Transport billing (Admin only)"}
+          subtitle="Applied only when a delivery is recorded"
         >
           {isAdmin ? (
-            <form onSubmit={submit} className="space-y-4">
-              <Field label="Per-km rate">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className={inputClass}
-                  value={rateForm.perKmRate}
-                  onChange={(event) =>
-                    setRateForm((prev) => ({ ...prev, perKmRate: event.target.value }))
-                  }
-                  placeholder="Enter approved per-km rate"
-                  required
-                />
-              </Field>
-              <Field label="Free distance (km)">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className={inputClass}
-                  value={rateForm.freeDistanceKm}
-                  onChange={(event) =>
-                    setRateForm((prev) => ({ ...prev, freeDistanceKm: event.target.value }))
-                  }
-                />
-              </Field>
+            <div className="space-y-4">
+              <div className={`${inset} px-4 py-4 text-sm leading-6 text-[#4b5550]`}>
+                Activating writes the exact approved LKR tiers to the database. The SQL
+                calculator then uses those tiers when the Driver records distance,
+                signature, and cash at delivery.
+              </div>
               <div className="flex flex-wrap gap-3">
-                <ActionButton type="submit" disabled={busy || !rateForm.perKmRate.trim()}>
-                  Save transport settings
+                <ActionButton type="button" onClick={activateRate} disabled={busy || configured}>
+                  {configured ? "Tiered rate already active" : "Activate approved tiered rate"}
                 </ActionButton>
                 <ActionButton
                   type="button"
                   variant="secondary"
                   onClick={clearRate}
-                  disabled={busy || data.settings.per_km_rate === null}
+                  disabled={busy || !configured}
                 >
                   Clear rate
                 </ActionButton>
               </div>
-              {data.settings.per_km_rate !== null ? (
+              {configured ? (
                 <p className="text-xs text-[#6f7a74]">
                   Clearing the rate stops new transport calculations without changing past orders.
                 </p>
               ) : null}
-            </form>
+            </div>
           ) : (
             <EmptyState
               title="Read-only"
-              hint="Sign in as Admin to change the per-km rate and free distance."
+              hint="Sign in as Admin to activate or clear the approved transport tiers."
             />
           )}
         </SectionCard>

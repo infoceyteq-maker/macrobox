@@ -11,6 +11,12 @@ import { notify } from "@/lib/ui/toast";
 import { signOutAction } from "@/app/actions/auth";
 import { getDashboardDataAction, recordDeliveryAction } from "@/app/actions/pos";
 import type { DashboardData, DashboardOrder } from "@/lib/pos/dashboard-types";
+import {
+  calculateTransportCost,
+  getTransportTierConfig,
+  isTransportConfigured,
+  TRANSPORT_TIER_LABELS,
+} from "@/lib/pos/transport";
 import type { DecimalValue, DeliverySettingsRow, OrderStatus } from "@/lib/pos/types";
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -80,17 +86,11 @@ function expectedCash(
   if (order.transport_calculated_at) {
     return asNumber(order.final_total);
   }
-  if (settings.per_km_rate === null || settings.per_km_rate === undefined) {
-    return null;
-  }
+  if (!isTransportConfigured(settings)) return null;
   if (distanceInput === "") return null;
   const distance = Number(distanceInput);
   if (!Number.isFinite(distance) || distance < 0) return null;
-  const rate = asNumber(settings.per_km_rate);
-  const freeDistance = asNumber(settings.free_distance_km);
-  const transport = Math.round(
-    (Math.max(distance - freeDistance, 0) * rate + Number.EPSILON) * 100,
-  ) / 100;
+  const transport = calculateTransportCost(distance, getTransportTierConfig(settings));
   return Number((asNumber(order.total_food_cost) + transport).toFixed(2));
 }
 
@@ -178,7 +178,8 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
   );
   const deliveredOrders = relevantOrders.filter((order) => order.status === "DELIVERED");
   const closedOrders = relevantOrders.filter((order) => order.status === "CLOSED").slice(0, 5);
-  const rateConfigured = data.settings.per_km_rate !== null && data.settings.per_km_rate !== undefined;
+  const rateConfigured = isTransportConfigured(data.settings);
+  const transportTiers = getTransportTierConfig(data.settings);
 
   function updateForm(order: DashboardOrder, patch: Partial<DeliveryForm>) {
     setForms((previous) => {
@@ -333,8 +334,13 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
               {deliverableOrders.length} delivery{deliverableOrders.length === 1 ? "" : "ies"} ready
             </h1>
             <p className="mt-1 text-sm text-[#6f7a74]">
-              Free distance {formatAmount(data.settings.free_distance_km)} km · Rate{" "}
-              {rateConfigured ? formatAmount(data.settings.per_km_rate) : "not configured"}
+              {rateConfigured ? (
+                <>
+                  {transportTiers.currency} tiered transport · {TRANSPORT_TIER_LABELS[0]}
+                </>
+              ) : (
+                "Transport rate not configured"
+              )}
             </p>
           </div>
           {!rateConfigured ? (
@@ -347,6 +353,14 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
             </span>
           )}
         </section>
+
+        {rateConfigured ? (
+          <section className={`${inset} grid gap-2 px-5 py-4 text-xs text-[#59645e] sm:grid-cols-2`}>
+            {TRANSPORT_TIER_LABELS.map((label) => (
+              <p key={label}>{label}</p>
+            ))}
+          </section>
+        ) : null}
 
         {message ? (
           <div className="rounded-2xl bg-[#dcead7] px-5 py-4 text-sm font-medium text-[#3f6b45]">
@@ -469,7 +483,7 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
                           onChange={(event) =>
                             updateForm(order, { distanceKm: event.target.value })
                           }
-                          placeholder={`Free up to ${formatAmount(data.settings.free_distance_km)} km`}
+                          placeholder={`${transportTiers.currency} ${transportTiers.baseRate.toFixed(2)} up to ${transportTiers.baseDistanceKm} km`}
                         />
                       </label>
                       {order.transport_calculated_at ? (

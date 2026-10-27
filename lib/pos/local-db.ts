@@ -53,6 +53,10 @@ const CUSTOMER_PHONE_MIGRATION_PATH = path.join(
   process.cwd(),
   "supabase/migrations/202610270007_customer_phone_normalization.sql",
 );
+const TIERED_TRANSPORT_MIGRATION_PATH = path.join(
+  process.cwd(),
+  "supabase/migrations/202610270009_tiered_transport_rate.sql",
+);
 
 const ROLE_LABELS: Record<AppRole, string> = {
   ADMIN: "Admin",
@@ -182,6 +186,9 @@ async function initDb(): Promise<PGlite> {
 
   const customerPhoneMigration = await fs.readFile(CUSTOMER_PHONE_MIGRATION_PATH, "utf8");
   await db.exec(customerPhoneMigration);
+
+  const tieredTransportMigration = await fs.readFile(TIERED_TRANSPORT_MIGRATION_PATH, "utf8");
+  await db.exec(tieredTransportMigration);
 
   await db.exec(`
     create table if not exists public.local_auth_users (
@@ -496,6 +503,19 @@ export async function localSetTransportRate(
       tx,
       `select * from public.set_transport_rate($1, $2)`,
       [input.perKmRate, input.freeDistanceKm ?? null],
+    );
+    return serialize<DeliverySettingsRow>(row);
+  });
+}
+
+export async function localActivateTieredTransportRate(
+  userId: string,
+): Promise<DeliverySettingsRow> {
+  return asUser(userId, async (tx) => {
+    const row = await queryOne<AnyRow>(
+      tx,
+      `select * from public.activate_tiered_transport_rate()`,
+      [],
     );
     return serialize<DeliverySettingsRow>(row);
   });

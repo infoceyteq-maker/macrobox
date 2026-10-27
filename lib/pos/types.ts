@@ -70,6 +70,16 @@ export interface DeliverySettingsRow {
   id: boolean;
   free_distance_km: DecimalValue;
   per_km_rate: DecimalValue | null;
+  rate_model: "TIERED_LKR" | "FLAT";
+  currency_code: string;
+  base_distance_km: DecimalValue;
+  fourth_km_ceiling_km: DecimalValue;
+  fifth_km_ceiling_km: DecimalValue;
+  base_rate: DecimalValue;
+  fourth_km_rate: DecimalValue;
+  fifth_km_rate: DecimalValue;
+  beyond_rate_per_km: DecimalValue;
+  is_configured: boolean;
   updated_by: string | null;
   updated_at: string;
 }
