@@ -3,21 +3,19 @@ import { z } from "zod";
 const E164_PHONE = /^\+[1-9]\d{7,14}$/;
 const EMAIL_IDENTIFIER = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** Fixed OTP used only by the sandboxed PGlite preview. Never sent in production. */
+export const LOCAL_CUSTOMER_OTP = "123456";
+
 /** Keep only the leading plus and digits, so UI formatting never affects login. */
 export function normalizePhone(value: string): string {
   const trimmed = value.trim();
   const hasPlus = trimmed.startsWith("+");
   const digits = trimmed.replace(/\D/g, "");
-  return hasPlus ? `+${digits}` : digits;
+  return hasPlus ? `+${digits}` : `+${digits}`;
 }
 
 export function isEmailIdentifier(value: string): boolean {
   return EMAIL_IDENTIFIER.test(value.trim());
-}
-
-export function normalizeIdentifier(value: string): string {
-  const trimmed = value.trim();
-  return isEmailIdentifier(trimmed) ? trimmed.toLowerCase() : normalizePhone(trimmed);
 }
 
 export function safeNextPath(value: string | null | undefined, fallback: string): string {
@@ -25,9 +23,7 @@ export function safeNextPath(value: string | null | undefined, fallback: string)
   return value;
 }
 
-export const customerRegistrationSchema = z.object({
-  name: z.string().trim().min(2, "Enter your full name.").max(160),
-  email: z.string().trim().toLowerCase().email("Enter a valid email address.").max(254),
+export const phoneOtpRequestSchema = z.object({
   phone: z
     .string()
     .trim()
@@ -35,26 +31,57 @@ export const customerRegistrationSchema = z.object({
     .max(24)
     .transform(normalizePhone)
     .refine((value) => E164_PHONE.test(value), "Use international format, for example +94…"),
-  password: z
+});
+
+export const phoneOtpVerifySchema = z.object({
+  phone: z
     .string()
-    .min(10, "Use at least 10 characters.")
-    .max(72, "Password is too long.")
-    .refine(
-      (value) => /[A-Za-z]/.test(value) && /\d/.test(value),
-      "Use at least one letter and one number.",
-    ),
+    .trim()
+    .min(8)
+    .max(24)
+    .transform(normalizePhone)
+    .refine((value) => E164_PHONE.test(value), "Use international format, for example +94…"),
+  token: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "Enter the 6-digit code from your SMS."),
 });
 
-export const customerSignInSchema = z.object({
-  identifier: z.string().trim().min(3, "Enter your email or phone number.").max(254),
-  password: z.string().min(1, "Enter your password.").max(72),
+export const emailLinkSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address.").max(254),
 });
 
-export type CustomerRegistrationInput = z.infer<typeof customerRegistrationSchema>;
-export type CustomerSignInInput = z.infer<typeof customerSignInSchema>;
+export const customerProfileSchema = z.object({
+  name: z.string().trim().max(160).default(""),
+  deliveryAddress: z.string().trim().max(2000).default(""),
+  deliveryNotes: z.string().trim().max(2000).default(""),
+});
+
+export type PhoneOtpRequestInput = z.infer<typeof phoneOtpRequestSchema>;
+export type PhoneOtpVerifyInput = z.infer<typeof phoneOtpVerifySchema>;
+export type EmailLinkInput = z.infer<typeof emailLinkSchema>;
+export type CustomerProfileInput = z.infer<typeof customerProfileSchema>;
 
 export interface CustomerAuthSuccess {
   userId: string;
   email: string;
   phone: string | null;
+}
+
+export interface CustomerOtpSendResult {
+  phone: string;
+  otpSent: boolean;
+  /** Present only in local PGlite preview mode. */
+  devOtp?: string;
+}
+
+/** Convert GoTrue's digits-only phone back to E.164 where possible. */
+export function authPhoneToE164(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const trimmed = phone.trim();
+  if (!trimmed) return null;
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return null;
+  if (trimmed.startsWith("+")) return `+${digits}`;
+  return `+${digits}`;
 }

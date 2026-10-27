@@ -8,7 +8,7 @@ import {
   SUPABASE_URL,
 } from "@/lib/pos/config";
 
-const CUSTOMER_PREFIXES = ["/orders", "/bill"];
+const CUSTOMER_PREFIXES = ["/orders", "/bill", "/profile"];
 const STAFF_PREFIXES = ["/pos", "/admin", "/driver"];
 const PROTECTED_PREFIXES = [...CUSTOMER_PREFIXES, ...STAFF_PREFIXES];
 const AUTH_PATHS = [
@@ -18,6 +18,7 @@ const AUTH_PATHS = [
   "/admin/login",
   "/driver/login",
   "/frontdesk/login",
+  "/auth/callback",
 ];
 
 type ActorRole = "ADMIN" | "MANAGER" | "FRONT_DESK" | "KITCHEN" | "DRIVER" | "CUSTOMER";
@@ -42,7 +43,7 @@ function loginPathFor(pathname: string): string {
 }
 
 function defaultPathFor(role: ActorRole): string {
-  if (role === "CUSTOMER") return "/orders";
+  if (role === "CUSTOMER") return "/profile";
   if (role === "DRIVER") return "/driver";
   if (role === "ADMIN") return "/admin";
   return "/pos";

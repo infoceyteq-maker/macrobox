@@ -37,6 +37,9 @@ export interface AppUserRow {
   name: string;
   email: string | null;
   phone: string | null;
+  delivery_address: string | null;
+  delivery_notes: string | null;
+  profile_completed_at: string | null;
   salary_structure: JsonObject;
   status: EmployeeStatus;
   created_at: string;

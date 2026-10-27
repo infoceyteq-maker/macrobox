@@ -29,7 +29,11 @@ export default function CartCheckout() {
         if (!active) return;
         if (result.ok) {
           setActorRole(result.data.role);
-          if (result.data.role === "CUSTOMER") setCustomerId(result.data.id);
+          if (result.data.role === "CUSTOMER") {
+            setCustomerId(result.data.id);
+            if (result.data.delivery_address) setDeliveryAddress(result.data.delivery_address);
+            if (result.data.delivery_notes) setDeliveryNotes(result.data.delivery_notes);
+          }
         }
       })
       .finally(() => {
@@ -238,7 +242,7 @@ export default function CartCheckout() {
                 href="/customer/login?next=/cart"
                 className={cn(NEU.buttonPrimary, "block w-full text-center")}
               >
-                Sign in or register to checkout
+                Continue with phone to checkout
               </Link>
               {isLocalMode() ? (
                 <button

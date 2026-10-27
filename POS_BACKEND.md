@@ -12,6 +12,7 @@ This document covers the backend architecture and the live Admin/POS UI built on
 | `supabase/migrations/202610270004_pos_clear_transport_rate.sql` | Admin-only `clear_transport_rate()` RPC for returning billing to unconfigured; supports both `public` and `macrobox_pos` installs. |
 | `supabase/migrations/202610270005_public_menu_read.sql` | Anonymous RLS read for active categories/products only, enabling the public digital menu and cart. |
 | `supabase/migrations/202610270009_tiered_transport_rate.sql` | Approved LKR distance-tiered transport settings, authoritative calculator, and Admin activation RPC. |
+| `supabase/migrations/202610270010_customer_profile_otp.sql` | Passwordless customer profile fields, OTP provisioning, and customer-scoped profile updates. |
 | `supabase/demo-seed.sql` | Optional verification seed: six role accounts, five weekday categories, and exact supplied catalog products with `0.00` price placeholders. |
 | `app/actions/pos.ts` | Next.js Server Actions for cart-to-order creation, lifecycle transitions, driver assignment, delivery, cash settlement, transport-rate config, and product visibility. |
 | `lib/pos/types.ts` | Shared TypeScript row types, enums, and `ActionResult<T>`. |
@@ -224,6 +225,7 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    psql "$DATABASE_URL" -f supabase/migrations/202610270006_customer_auth.sql
    psql "$DATABASE_URL" -f supabase/migrations/202610270007_customer_phone_normalization.sql
    psql "$DATABASE_URL" -f supabase/migrations/202610270009_tiered_transport_rate.sql
+   psql "$DATABASE_URL" -f supabase/migrations/202610270010_customer_profile_otp.sql
    ```
 
    On an existing project with conflicting `public.orders`, apply
@@ -233,8 +235,9 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    `202610270005_public_menu_read.sql`,
    `202610270006_customer_auth.sql`,
    `202610270007_customer_phone_normalization.sql`,
-   `202610270008_expose_pos_api_schema.sql`, and
-   `202610270009_tiered_transport_rate.sql` instead, then set
+   `202610270008_expose_pos_api_schema.sql`,
+   `202610270009_tiered_transport_rate.sql`, and
+   `202610270010_customer_profile_otp.sql` instead, then set
    `NEXT_PUBLIC_SUPABASE_SCHEMA=macrobox_pos`. The last migration is
    Supabase-hosted PostgREST configuration and should not be run in PGlite.
 
@@ -254,7 +257,9 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
 
    Migration `202610270009_tiered_transport_rate.sql` stores the exact approved tiers and activates them. Admin can call `clearTransportRateAction()` to disable new transport calculations without changing historical orders, then reactivate the approved tiers at any time.
 
-5. Add categories/products with `createCategoryAction()` and `upsertProductAction()` using verified data. Toggle visibility with `setProductVisibilityAction()`.
+5. Configure a production SMS provider in Supabase Auth (Twilio / MessageBird / Vonage / Textlocal). Customer sign-in uses `signInWithOtp({ phone })`; without provider credentials, live SMS codes cannot be delivered. Credentials are not stored in the repository or Vercel. Local PGlite preview uses fixed OTP `123456`.
+
+6. Add categories/products with `createCategoryAction()` and `upsertProductAction()` using verified data. Toggle visibility with `setProductVisibilityAction()`.
 
 ## 9. How Admin interacts effortlessly
 

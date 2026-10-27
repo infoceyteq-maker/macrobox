@@ -17,7 +17,7 @@ export default async function LoginPage({
     <StaffLoginForm
       portal="general"
       title="Employee Portal"
-      subtitle="Sign in to the shared POS workspace. Use the dedicated Master Admin, Driver, or Front Desk login for directly bookmarked portals."
+      subtitle="Sign in to the shared POS workspace. Staff accounts are issued by administration only."
       nextPath={safeNextPath(next, "/pos")}
     />
   );

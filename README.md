@@ -81,18 +81,19 @@ The full implementation map is in `docs/FOLDER_STRUCTURE.md`. Key additions:
 - Global `sonner` toasts for New Order Received, Order Accepted, Order Dispatched, Payment Settled, and other return messages.
 - `supabase/migrations/202610270005_public_menu_read.sql` — anonymous RLS read for active menu items only; no prices or private order data are exposed.
 - `supabase/migrations/202610270009_tiered_transport_rate.sql` — approved LKR distance-tiered transport billing and Admin activation RPC.
+- `supabase/migrations/202610270010_customer_profile_otp.sql` — passwordless customer profile fields, OTP provisioning RPC, and customer-only profile update RPC.
 
 Print rules are in `app/globals.css`: `@page { size: 80mm auto; margin: 0; }` plus black-and-white, shadow-free `.thermal-print` output. The approved LKR distance-tiered transport rate is implemented in `lib/pos/transport.ts` and the authoritative SQL function; no real meal prices, salaries, Google Maps key, or health claims were invented. Product `0.00` still means “price pending” until the business supplies approved prices.
 
 ## Production authentication and routes
 
-- Public menu: `/`; cart: `/cart`.
-- Customer registration: `/customer/register` (email + E.164 phone + password).
-- Customer sign-in: `/customer/login` (email **or** phone + password).
+- Public customer menu: `/`; cart: `/cart`.
+- Customer registration / sign-in: `/customer/login` (passwordless phone OTP; same flow creates new accounts).
+- Customer profile: `/profile` (optional name, delivery address, notes, and email magic link).
 - Customer tracking: `/orders`; digital e-bill: `/bill/[orderId]`.
 - Master Admin login: `/admin/login` (no self-registration); panel: `/admin`.
 - Front Desk / POS login: `/frontdesk/login`; dashboard: `/pos`.
 - Driver login: `/driver/login`; portal: `/driver`.
 - Generic employee login: `/login`.
 
-`proxy.ts` refreshes Supabase Auth cookies and uses the active database role to separate customer and employee surfaces. The service-role key is used only in `app/actions/customer-auth.ts` for customer provisioning and phone lookup; it is never exposed as `NEXT_PUBLIC_*`. See `DEPLOYMENT.md` for live links, Vercel environment variables, and production checks.
+Public customer pages render only customer-relevant navigation. Admin/Staff/POS/Driver links are not exposed in the customer UI. `proxy.ts` refreshes Supabase Auth cookies and uses the active database role to separate customer and employee surfaces. The service-role key is used only in server-side OTP profile provisioning and email-link callbacks; it is never exposed as `NEXT_PUBLIC_*`. See `DEPLOYMENT.md` for live links, Vercel environment variables, and the production SMS-provider requirement.
