@@ -414,3 +414,10 @@ A local Puppeteer pass on the rebuilt production preview verified:
 4. No browser console or page errors.
 
 The same preview runs the complete SQL lifecycle test; a 3 km delivery now records `transport_cost = 150.00` and requires `cashCollectedAmount = 150.00` when food subtotal is the current `0.00` test placeholder.
+
+### Final tiered-billing deployment
+
+- PR: `https://github.com/infoceyteq-maker/macrobox/pull/4`
+- Production commit: `97aacb06f56a191d57f85024dccf529d40486043`
+- Vercel deployment: `dpl_394VK5YiK8MFnkqnbkxqZoQgk9jC` — `READY / PROMOTED`
+- Live catalog and `/api/auth-health` were rechecked after deployment; no menu-sync error and `ok:true` runtime health.
