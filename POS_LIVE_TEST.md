@@ -337,3 +337,20 @@ The new separated authentication layer was verified before deployment:
 - Production Vercel env vars were configured for URL, anon key, service-role key (sensitive), `macrobox_pos` schema, Supabase live mode, and production site URL.
 
 Screenshots: `screenshots/16-customer-registration.png` and `screenshots/17-admin-login-route.png`.
+
+### Live Vercel route verification
+
+Production deployment `dpl_6bcXQ56vmTXF7UJ2xbDE69ZABhgw` is `READY` and promoted to `https://macrobox-pos-live.vercel.app`.
+
+Live route checks passed after exposing `macrobox_pos` to Supabase PostgREST:
+
+- `/` renders the weekday catalog with no menu-sync error.
+- `/customer/register`, `/customer/login`, `/admin/login`, `/driver/login`, and `/frontdesk/login` render their dedicated forms.
+- `/admin` redirects to `/admin/login?next=/admin`.
+- `/orders` redirects to `/customer/login?next=/orders`.
+- `/pos` redirects to `/frontdesk/login?next=/pos`.
+- `/driver` redirects to `/driver/login?next=/driver`.
+- `/bill` redirects to `/customer/login?next=/bill`.
+- `/cart` remains public.
+
+`202610270008_expose_pos_api_schema.sql` records the Supabase-hosted PostgREST configuration that adds `macrobox_pos` to `pgrst.db_schemas` and reloads config/schema cache. `/api/auth-health` provides a non-secret runtime check of the service-role Admin API and isolated-schema RPC.
