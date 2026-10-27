@@ -101,11 +101,7 @@ export default function StaffLoginForm({
             </div>
           </div>
           <p className="text-xs text-[#6f7a74]">
-            Customer registration is separate at{" "}
-            <Link href="/customer/register" className="font-semibold text-[#3f6b45] hover:underline">
-              /customer/register
-            </Link>
-            .
+            Customer access is separate. Staff accounts are issued by administration only.
           </p>
         </section>
 
@@ -168,15 +164,6 @@ export default function StaffLoginForm({
               </Link>
               <Link href="/customer/login" className="hover:underline">
                 Customer sign in
-              </Link>
-              <Link href="/admin/login" className="hover:underline">
-                Master Admin
-              </Link>
-              <Link href="/driver/login" className="hover:underline">
-                Driver
-              </Link>
-              <Link href="/frontdesk/login?next=/pos" className="hover:underline">
-                Front Desk
               </Link>
             </div>
           </div>

@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CATALOG_SEED_MEALS } from "./catalog-seed";
-import type { CustomerAuthSuccess, CustomerRegistrationInput } from "./customer-auth";
+import type { CustomerAuthSuccess, CustomerProfileInput } from "./customer-auth";
+import { LOCAL_CUSTOMER_OTP } from "./customer-auth";
 import { normalizeDatabaseError, PosActionError } from "./errors";
 import type { DashboardData, DashboardOrder, DirectoryUser } from "./dashboard-types";
 import type {
@@ -56,6 +57,10 @@ const CUSTOMER_PHONE_MIGRATION_PATH = path.join(
 const TIERED_TRANSPORT_MIGRATION_PATH = path.join(
   process.cwd(),
   "supabase/migrations/202610270009_tiered_transport_rate.sql",
+);
+const CUSTOMER_PROFILE_OTP_MIGRATION_PATH = path.join(
+  process.cwd(),
+  "supabase/migrations/202610270010_customer_profile_otp.sql",
 );
 
 const ROLE_LABELS: Record<AppRole, string> = {
@@ -190,6 +195,9 @@ async function initDb(): Promise<PGlite> {
   const tieredTransportMigration = await fs.readFile(TIERED_TRANSPORT_MIGRATION_PATH, "utf8");
   await db.exec(tieredTransportMigration);
 
+  const customerProfileOtpMigration = await fs.readFile(CUSTOMER_PROFILE_OTP_MIGRATION_PATH, "utf8");
+  await db.exec(customerProfileOtpMigration);
+
   await db.exec(`
     create table if not exists public.local_auth_users (
       id uuid primary key references auth.users(id) on delete cascade,
@@ -197,6 +205,12 @@ async function initDb(): Promise<PGlite> {
       password text not null,
       role public.app_role not null,
       name text not null
+    );
+
+    create table if not exists public.local_phone_otps (
+      phone text primary key,
+      otp text not null,
+      expires_at timestamptz not null default now()
     );
   `);
 
@@ -332,91 +346,114 @@ export async function localSignIn(email: string, password: string): Promise<stri
   return String(id);
 }
 
-/** Local preview equivalent of the server-side customer registration action. */
-export async function localRegisterCustomer(
-  input: CustomerRegistrationInput,
-): Promise<CustomerAuthSuccess> {
+/** Local preview equivalent of Supabase phone OTP send. */
+export async function localSendPhoneOtp(
+  phone: string,
+): Promise<{ phone: string; otpSent: boolean; devOtp: string }> {
   const db = await getLocalDb();
-  const email = input.email.trim().toLowerCase();
-
-  const duplicateEmail = await db.query<AnyRow>(
-    `select id from public.local_auth_users where lower(email) = lower($1)`,
-    [email],
-  );
-  if (duplicateEmail.rows[0]) {
-    throw new PosActionError(
-      "EMAIL_ALREADY_REGISTERED",
-      "That email is already registered. Sign in instead.",
-    );
-  }
-
-  const duplicatePhone = await db.query<AnyRow>(
-    `select id from public.app_users
-     where role = 'CUSTOMER'
-       and regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
-         = regexp_replace($1, '[^0-9]', '', 'g')`,
-    [input.phone],
-  );
-  if (duplicatePhone.rows[0]) {
-    throw new PosActionError(
-      "PHONE_ALREADY_REGISTERED",
-      "That phone number is already registered. Sign in instead.",
-    );
-  }
-
-  const id = randomUUID();
   await db.query(
-    `insert into auth.users (id, email, raw_user_meta_data)
-     values ($1, $2, $3::jsonb)`,
-    [id, email, JSON.stringify({ name: input.name, phone: input.phone })],
+    `insert into public.local_phone_otps (phone, otp, expires_at)
+     values ($1, $2, now() + interval '5 minutes')
+     on conflict (phone) do update
+       set otp = excluded.otp,
+           expires_at = excluded.expires_at`,
+    [phone, LOCAL_CUSTOMER_OTP],
   );
-  await db.query(
-    `update public.app_users
-        set role = 'CUSTOMER', status = 'ACTIVE', name = $2, email = $3, phone = $4
-      where id = $1`,
-    [id, input.name, email, input.phone],
-  );
-  await db.query(
-    `insert into public.local_auth_users (id, email, password, role, name)
-     values ($1, $2, $3, 'CUSTOMER', $4)`,
-    [id, email, input.password, input.name],
-  );
-
-  return { userId: id, email, phone: input.phone };
+  return { phone, otpSent: true, devOtp: LOCAL_CUSTOMER_OTP };
 }
 
-/** Local preview sign-in using either the registered email or phone number. */
-export async function localCustomerSignIn(
-  identifier: string,
-  password: string,
+/** Local preview OTP verification; creates the customer profile on first use. */
+export async function localVerifyPhoneOtp(
+  phone: string,
+  token: string,
 ): Promise<CustomerAuthSuccess> {
   const db = await getLocalDb();
-  const result = await db.query<AnyRow>(
-    `select l.id, l.email, a.phone, a.role, a.status
-       from public.local_auth_users l
-       join public.app_users a on a.id = l.id
-      where l.password = $2
-        and a.role = 'CUSTOMER'
-        and a.status = 'ACTIVE'
-        and (
-          lower(l.email) = lower($1)
-          or regexp_replace(coalesce(a.phone, ''), '[^0-9]', '', 'g')
-            = regexp_replace($1, '[^0-9]', '', 'g')
-        )`,
-    [identifier, password],
+  const otpResult = await db.query<AnyRow>(
+    `select otp from public.local_phone_otps
+      where phone = $1 and expires_at > now()`,
+    [phone],
   );
-  const row = result.rows[0];
-  if (!row) {
+  if (!otpResult.rows[0] || otpResult.rows[0].otp !== token) {
     throw new PosActionError(
-      "INVALID_CREDENTIALS",
-      "Invalid email/phone or password.",
+      "INVALID_OTP",
+      "That verification code is invalid or has expired.",
     );
   }
-  return {
-    userId: String(row.id),
-    email: String(row.email),
-    phone: row.phone ? String(row.phone) : null,
-  };
+
+  let userResult = await db.query<AnyRow>(
+    `select id, email from public.app_users
+      where role = 'CUSTOMER'
+        and regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
+          = regexp_replace($1, '[^0-9]', '', 'g')
+      limit 1`,
+    [phone],
+  );
+
+  let userId: string;
+  let email: string;
+
+  if (userResult.rows[0]) {
+    userId = String(userResult.rows[0].id);
+    email = userResult.rows[0].email ? String(userResult.rows[0].email) : "";
+  } else {
+    userId = randomUUID();
+    const initialName = `Customer ${phone.slice(-4)}`;
+    await db.query(
+      `insert into auth.users (id, email, raw_user_meta_data)
+       values ($1, null, $2::jsonb)`,
+      [userId, JSON.stringify({ phone, name: initialName, signup_source: "customer_phone_otp" })],
+    );
+    await db.query(
+      `update public.app_users
+          set role = 'CUSTOMER', status = 'ACTIVE', name = $2, email = null, phone = $3
+        where id = $1`,
+      [userId, initialName, phone],
+    );
+    email = "";
+  }
+
+  await db.query(`delete from public.local_phone_otps where phone = $1`, [phone]);
+  return { userId, email, phone };
+}
+
+/** Local preview email-link equivalent: attach the email immediately. */
+export async function localLinkCustomerEmail(
+  userId: string,
+  email: string,
+): Promise<{ userId: string; email: string }> {
+  const db = await getLocalDb();
+  await db.query(
+    `update auth.users
+        set email = $2,
+            raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb)
+              || jsonb_build_object('email', $2::text)
+      where id = $1`,
+    [userId, email],
+  );
+  await db.query(
+    `update public.app_users set email = $2, updated_at = now() where id = $1`,
+    [userId, email],
+  );
+  return { userId, email };
+}
+
+/** Local preview profile update. */
+export async function localUpdateCustomerProfile(
+  userId: string,
+  input: CustomerProfileInput,
+): Promise<AppUserRow> {
+  const db = await getLocalDb();
+  await db.query(
+    `update public.app_users
+        set name = coalesce(nullif($2, ''), name),
+            delivery_address = nullif($3, ''),
+            delivery_notes = nullif($4, ''),
+            profile_completed_at = now(),
+            updated_at = now()
+      where id = $1`,
+    [userId, input.name, input.deliveryAddress, input.deliveryNotes],
+  );
+  return localGetActor(userId);
 }
 
 export async function localGetActor(userId: string): Promise<AppUserRow> {

@@ -6,7 +6,8 @@ This map shows the customer, admin, driver, billing, print, and notification lay
 app/
   actions/
     auth.ts                    # local/Supabase staff sign-in, sign-out
-    customer-auth.ts           # public customer registration + email/phone sign-in
+    customer-auth.ts           # passwordless phone OTP send/verify actions
+    customer-profile.ts        # customer profile update + optional email magic link
     employees.ts               # Admin-only employee profile/role/status updates
     pos.ts                     # orders, lifecycle, tiered transport activation, menu, delivery, settlement
     public-menu.ts             # anonymous active-menu read for cart/catalog
@@ -19,8 +20,10 @@ app/
   orders/page.tsx              # customer tracking page
   pos/page.tsx                 # unified POS dashboard
   login/page.tsx               # generic employee sign-in (no registration)
-  customer/login/page.tsx      # customer email/phone sign-in
-  customer/register/page.tsx   # public email + phone customer registration
+  customer/login/page.tsx      # passwordless phone OTP sign-in / registration
+  customer/register/page.tsx   # same passwordless phone OTP flow
+  profile/page.tsx             # optional customer profile management
+  auth/callback/route.ts       # email magic-link / token_hash callback
   admin/login/page.tsx         # Master Admin login (ADMIN only)
   driver/login/page.tsx        # Driver login (DRIVER/ADMIN)
   frontdesk/login/page.tsx     # Front Desk / POS login
@@ -29,8 +32,10 @@ app/
 
 components/
   auth/
-    CustomerAuthForm.tsx       # public register / email-or-phone sign-in
+    CustomerAuthForm.tsx       # passwordless phone OTP UI, no internal links
     StaffLoginForm.tsx         # role-specific employee login, no self-registration
+  customer/
+    CustomerProfile.tsx        # optional name/address/email profile management
   LunchCatalog.tsx             # Monday–Friday cards, detail modal, macro progress, add-to-cart
   PosDashboard.tsx             # master control, orders, menu, employees, financials, documents
   CustomerOrders.tsx           # customer order list + tracking timeline
@@ -62,7 +67,8 @@ lib/
   brand.ts                     # exact supplied palette + contact line
   ui/toast.ts                  # notify() wrapper for return messages
   pos/
-    customer-auth.ts           # E.164 phone/email schemas and safe next-path helper
+    customer-auth.ts           # OTP/email/profile schemas and phone helpers
+    customer-profile.ts        # server-only OTP profile provisioning helper
     supabase-admin.ts          # server-only service-role client factory
     public-menu.ts             # public menu types + price-pending helper
     action-result.ts           # shared ActionResult wrapper
@@ -80,11 +86,12 @@ supabase/migrations/
   202610270007_customer_phone_normalization.sql # digits-only E.164 phone matching
   202610270008_expose_pos_api_schema.sql # Supabase PostgREST profile exposure
   202610270009_tiered_transport_rate.sql  # approved LKR distance tiers + calculator
+  202610270010_customer_profile_otp.sql  # passwordless OTP profiles + customer profile RPCs
 ```
 
 ## Production routing
 
-- Customer: `/`, `/cart`, `/customer/login`, `/customer/register`, `/orders`, `/bill/[orderId]`.
+- Customer: `/`, `/cart`, `/customer/login`, `/customer/register`, `/profile`, `/orders`, `/bill/[orderId]`, `/auth/callback`.
 - Master Admin: `/admin/login` → `/admin`.
 - Front Desk / POS: `/frontdesk/login` → `/pos`.
 - Driver: `/driver/login` → `/driver`.
@@ -99,3 +106,4 @@ supabase/migrations/
 - Print output is black-and-white, 80mm, shadow-free, and isolated with `.thermal-print`.
 - The approved LKR distance-tiered transport rate is implemented exactly in `lib/pos/transport.ts` and SQL. No real meal prices, salaries, addresses, health claims, or Google Maps key were invented.
 - Product `0.00` remains a “price pending” placeholder; Admin must enter approved values before production.
+- Public customer navigation contains only customer-relevant links. Staff/Admin/Driver routes are not linked from customer pages.

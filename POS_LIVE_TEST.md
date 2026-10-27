@@ -421,3 +421,31 @@ The same preview runs the complete SQL lifecycle test; a 3 km delivery now recor
 - Production commit: `97aacb06f56a191d57f85024dccf529d40486043`
 - Vercel deployment: `dpl_394VK5YiK8MFnkqnbkxqZoQgk9jC` — `READY / PROMOTED`
 - Live catalog and `/api/auth-health` were rechecked after deployment; no menu-sync error and `ok:true` runtime health.
+
+---
+
+## 12. Passwordless customer OTP and public-UI isolation
+
+The customer flow was redesigned around Supabase Auth phone OTP and optional email magic links.
+
+### Implemented
+
+- Removed Admin, Staff/POS, Front Desk, and Driver links from public customer pages.
+- Customer navigation now shows only Menu, Cart, Track, Profile, and Sign in.
+- `/customer/login` and `/customer/register` now use one passwordless phone OTP form.
+- `sendCustomerPhoneOtpAction()` calls Supabase `signInWithOtp({ phone, channel: 'sms' })`.
+- `verifyCustomerPhoneOtpAction()` calls `verifyOtp({ phone, token, type: 'sms' })`, creates the session, and ensures the `CUSTOMER` profile exists.
+- `/profile` lets customers optionally save Name, Delivery Address, Delivery Notes, and an Email.
+- `sendCustomerEmailLinkAction()` uses `updateUser({ email }, { emailRedirectTo })`; `/auth/callback` exchanges the code/token hash and syncs the profile.
+- Migration `202610270010_customer_profile_otp.sql` adds the profile columns, OTP provisioning RPC, customer-only profile update RPC, and Auth-user sync trigger.
+- The local PGlite preview uses fixed OTP `123456`; production requires a real SMS provider configured in Supabase Auth.
+
+### Verification
+
+- `npm run typecheck`, `npm run build`, and `npm run test:pos` passed with the new OTP/profile checks.
+- Local Puppeteer E2E passed 10/10 in the full pass and 7/7 in the final regression: no internal links on public menu/auth/profile pages, no password fields, OTP send/verify, redirect to `/profile` with continue link, optional profile save, optional email link, and no browser errors.
+- Live Supabase migration was applied and the new columns/RPCs were verified.
+
+### Production SMS provider
+
+A real SMS provider (Twilio / MessageBird / Vonage / Textlocal) must be configured in the Supabase Auth dashboard with credentials. The credentials are intentionally not stored in the repository or Vercel. Without them, live `signInWithOtp` returns an SMS-provider error and the UI shows a clear message rather than inventing a code.

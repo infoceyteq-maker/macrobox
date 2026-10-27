@@ -3,8 +3,8 @@ import CustomerAuthForm from "@/components/auth/CustomerAuthForm";
 import { safeNextPath } from "@/lib/pos/customer-auth";
 
 export const metadata: Metadata = {
-  title: "MacroBox | Customer Sign In",
-  description: "Sign in with your registered email address or phone number.",
+  title: "MacroBox | Customer Phone Sign In",
+  description: "Passwordless customer sign-in with a one-time SMS code.",
 };
 
 export default async function CustomerLoginPage({
@@ -13,10 +13,5 @@ export default async function CustomerLoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const { next } = await searchParams;
-  return (
-    <CustomerAuthForm
-      initialMode="signin"
-      nextPath={safeNextPath(next, "/orders")}
-    />
-  );
+  return <CustomerAuthForm nextPath={safeNextPath(next, "/profile")} />;
 }

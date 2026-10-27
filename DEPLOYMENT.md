@@ -6,9 +6,9 @@ Canonical production origin: `https://macrobox-pos-live.vercel.app`
 
 | Surface | URL | Authentication |
 | --- | --- | --- |
-| Customer digital menu | `https://macrobox-pos-live.vercel.app/` | Public browsing |
-| Customer registration | `https://macrobox-pos-live.vercel.app/customer/register` | Email + E.164 phone + password |
-| Customer sign-in | `https://macrobox-pos-live.vercel.app/customer/login` | Email **or** phone + password |
+| Customer digital menu | `https://macrobox-pos-live.vercel.app/` | Public browsing; no internal system links |
+| Customer registration / sign-in | `https://macrobox-pos-live.vercel.app/customer/login` | Passwordless phone OTP (same flow creates new accounts) |
+| Customer profile | `https://macrobox-pos-live.vercel.app/profile` | Signed-in customer; optional name, address, email magic link |
 | Master Admin login | `https://macrobox-pos-live.vercel.app/admin/login` | Pre-provisioned Admin only; no registration |
 | Master Admin panel | `https://macrobox-pos-live.vercel.app/admin` | `ADMIN` |
 | Front Desk / POS login | `https://macrobox-pos-live.vercel.app/frontdesk/login` | `ADMIN`, `MANAGER`, `FRONT_DESK`, `KITCHEN` |
@@ -18,7 +18,7 @@ Canonical production origin: `https://macrobox-pos-live.vercel.app`
 | Order tracking | `https://macrobox-pos-live.vercel.app/orders` | Signed-in customers and staff |
 | Digital e-bill | `https://macrobox-pos-live.vercel.app/bill/[orderId]` | Signed-in, RLS-scoped |
 
-The public catalog, cart, customer authentication, and staff authentication are separate route families. `proxy.ts` refreshes the Supabase session and reads the active `app_users.role` before permitting `/admin`, `/pos`, `/driver`, `/orders`, and `/bill`. Database RLS remains authoritative.
+The public catalog, cart, customer authentication, customer profile, and staff authentication are separate route families. `proxy.ts` refreshes the Supabase session and reads the active `app_users.role` before permitting `/admin`, `/pos`, `/driver`, `/orders`, `/bill`, and `/profile`. Public customer pages expose only customer-relevant links; Admin/Staff/POS/Driver links are not rendered in the customer UI. Database RLS remains authoritative.
 
 ## Deployment record
 
@@ -36,12 +36,15 @@ The POS tables remain in the isolated `macrobox_pos` schema. `202610270008_expos
 
 ## Supabase Auth
 
-- Customers register with both an email address and an international phone number.
-- `app/actions/customer-auth.ts` uses the server-only `SUPABASE_SERVICE_ROLE_KEY` to call `auth.admin.createUser` with `email_confirm` and `phone_confirm`. No verification email or SMS provider is required for this controlled password-based flow.
-- The 202610270006 and 202610270007 migrations copy the supplied phone into `macrobox_pos.app_users`, enforce digits-only phone uniqueness, and expose a service-role-only phone-to-email resolver.
-- Sign-in first uses native Supabase email/password or phone/password. If a project rejects direct phone/password sign-in, the Server Action resolves the confirmed phone to its Auth email through the service-role RPC and retries.
-- Email and phone sign-in, and the Master Admin password sign-in, were smoke-tested against the live GoTrue `/token` endpoint.
-- Supabase Auth `site_url` and redirect allow-list include the production Vercel origin and Vercel preview patterns.
+- Customers use **passwordless phone OTP** as the primary sign-in. `sendCustomerPhoneOtpAction()` calls Supabase `signInWithOtp({ phone, channel: 'sms' })`; `verifyCustomerPhoneOtpAction()` calls `verifyOtp({ phone, token, type: 'sms' })` and creates the session.
+- The same flow registers new customers automatically. No password, name, or email is collected upfront.
+- After verification, `ensureCustomerProfileForUser()` calls the service-role RPC `ensure_customer_profile()` so a `CUSTOMER` row exists in `macrobox_pos.app_users` before the first authenticated query.
+- Customers are redirected to `/profile`, where they can optionally add Name, Delivery Address, Delivery Notes, and an Email. `update_customer_profile()` is a customer-scoped RPC that cannot change role, status, salary, or another user's row.
+- Optional email verification uses `supabase.auth.updateUser({ email }, { emailRedirectTo })`. `/auth/callback` exchanges the PKCE code or token hash, syncs the profile, and returns to `/profile`.
+- The 202610270010 migration adds `delivery_address`, `delivery_notes`, `profile_completed_at`, the profile RPCs, and an Auth-user update trigger.
+- The local PGlite preview uses a fixed OTP `123456` and attaches optional emails immediately; no real SMS is sent in preview.
+- **Production SMS requirement:** a real SMS provider (for example Twilio, MessageBird, Vonage, or Textlocal) must be configured in the Supabase Auth dashboard. Provider credentials are not stored in this repository or Vercel. Without them, `signInWithOtp` will return an SMS-provider error; the UI surfaces this instead of inventing a code.
+- Supabase Auth `site_url` and redirect allow-list include the production Vercel origin, `/auth/callback`, and Vercel preview patterns.
 
 ## Master Admin
 
@@ -74,4 +77,5 @@ The deployment continues to use the isolated `macrobox_pos` schema on the connec
 2. Configure the approved product prices in the Admin panel; `0.00` still blocks real charging assumptions.
 3. Replace the simulated driver map with an approved map/GPS provider.
 4. Add verified salary/expense and nutrition data before publishing derived claims.
-5. Enable CAPTCHA and email/phone verification when a production mailer/SMS provider is available.
+5. Configure the production SMS provider credentials in Supabase Auth so live phone OTP messages are delivered.
+6. Enable CAPTCHA and production mailer settings when available.

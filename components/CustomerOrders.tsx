@@ -176,8 +176,6 @@ export default function CustomerOrders({ initialData }: { initialData: Dashboard
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const isStaff = data.actor.role !== "CUSTOMER";
-  const canDriver = data.actor.role === "DRIVER" || data.actor.role === "ADMIN";
   const activeOrder =
     data.orders.find(
       (order) => order.status !== "DELIVERED" && order.status !== "CLOSED",
@@ -238,16 +236,9 @@ export default function CustomerOrders({ initialData }: { initialData: Dashboard
             <Link href="/" className={secondary}>
               Catalog
             </Link>
-            {isStaff ? (
-              <Link href="/pos" className={secondary}>
-                POS dashboard
-              </Link>
-            ) : null}
-            {canDriver ? (
-              <Link href="/driver" className={secondary}>
-                Driver view
-              </Link>
-            ) : null}
+            <Link href="/profile" className={secondary}>
+              Profile
+            </Link>
             <button type="button" onClick={refresh} disabled={busy} className={secondary}>
               Refresh
             </button>

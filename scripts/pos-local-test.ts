@@ -4,12 +4,14 @@ import {
   LOCAL_DEMO_USERS,
   localActivateTieredTransportRate,
   localAssignDriver,
-  localCustomerSignIn,
+  localLinkCustomerEmail,
+  localSendPhoneOtp,
+  localUpdateCustomerProfile,
+  localVerifyPhoneOtp,
   localClearTransportRate,
   localCreateCategory,
   localCreateOrder,
   localGetDeliverySettings,
-  localRegisterCustomer,
   localGetPublicMenu,
   localLoadDashboardData,
   localUpdateEmployee,
@@ -290,30 +292,50 @@ async function main() {
   });
   check("Admin employee management update", employee.name === "MacroBox Customer Verified");
 
-  const newCustomer = await localRegisterCustomer({
-    name: "Local Auth Test Customer",
-    email: "new.customer@macrobox.local",
-    phone: "+94000000123",
-    password: "LocalTest123!",
+  const otpPhone = "+94000000123";
+  const otpSend = await localSendPhoneOtp(otpPhone);
+  check("Local phone OTP issued", otpSend.otpSent && otpSend.devOtp === "123456");
+
+  let invalidOtpBlocked = false;
+  try {
+    await localVerifyPhoneOtp(otpPhone, "000000");
+  } catch (error) {
+    invalidOtpBlocked = error instanceof Error && /INVALID_OTP|invalid/i.test(error.message);
+  }
+  check("Invalid phone OTP rejected", invalidOtpBlocked);
+
+  const otpCustomer = await localVerifyPhoneOtp(otpPhone, otpSend.devOtp);
+  check("Phone OTP creates customer profile", Boolean(otpCustomer.userId));
+
+  const otpReturning = await localVerifyPhoneOtp(otpPhone, (await localSendPhoneOtp(otpPhone)).devOtp);
+  check("Returning phone OTP reuses same customer", otpReturning.userId === otpCustomer.userId);
+
+  const updatedProfile = await localUpdateCustomerProfile(otpCustomer.userId, {
+    name: "OTP Test Customer",
+    deliveryAddress: "12 Preview Lane",
+    deliveryNotes: "Gate code 1234",
   });
-  check("Customer registered with email and phone", Boolean(newCustomer.userId));
-
-  const emailSignIn = await localCustomerSignIn(
-    "new.customer@macrobox.local",
-    "LocalTest123!",
+  check(
+    "Customer profile saves optional details",
+    updatedProfile.name === "OTP Test Customer" &&
+      updatedProfile.delivery_address === "12 Preview Lane" &&
+      updatedProfile.delivery_notes === "Gate code 1234" &&
+      updatedProfile.profile_completed_at !== null,
   );
-  check("Customer signs in with email", emailSignIn.userId === newCustomer.userId);
 
-  const phoneSignIn = await localCustomerSignIn("+94 000 000 123", "LocalTest123!");
-  check("Customer signs in with phone", phoneSignIn.userId === newCustomer.userId);
+  const linkedEmail = await localLinkCustomerEmail(
+    otpCustomer.userId,
+    "otp.customer@macrobox.local",
+  );
+  check("Optional email link attaches email", linkedEmail.email === "otp.customer@macrobox.local");
 
   const phoneLookup = await db.query<{ email: string | null }>(
     "select public.find_customer_signin_email($1) as email",
-    ["+94000000123"],
+    [otpPhone],
   );
   check(
     "Server-only phone-to-email lookup works",
-    phoneLookup.rows[0]?.email === "new.customer@macrobox.local",
+    phoneLookup.rows[0]?.email === "otp.customer@macrobox.local",
   );
 
   console.log("\nALL LOCAL POS CHECKS PASSED");
