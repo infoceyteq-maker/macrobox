@@ -22,11 +22,11 @@ The public catalog, cart, customer authentication, and staff authentication are 
 
 ## Deployment record
 
-- GitHub PR: `https://github.com/infoceyteq-maker/macrobox/pull/1` (merged into `main`).
-- Production commit: `b6261ac7042be489753f28babcefbcfcdeb0a215`.
+- GitHub PRs: `https://github.com/infoceyteq-maker/macrobox/pull/1` and `https://github.com/infoceyteq-maker/macrobox/pull/2` (both merged into `main`).
+- Final production commit: `e88cfb8f203f99706ae3ee619bbffac80fddbb12`.
 - Vercel project: `macrobox-pos-live` (`prj_LrbnqyK2AQIcVEc5CY1bEWnCplSH`).
-- Production deployment: `dpl_6bcXQ56vmTXF7UJ2xbDE69ZABhgw`, state `READY`, promoted to the production alias.
-- Non-secret runtime health check: `https://macrobox-pos-live.vercel.app/api/auth-health`.
+- Final production deployment: `dpl_BjLYNWa1BQU4uC1E51NsMTJYbUov`, state `READY`, promoted to the production alias.
+- Non-secret runtime health check: `https://macrobox-pos-live.vercel.app/api/auth-health` — returns `ok:true`, `supabaseAdminApi:true`, `phoneLookupRpc:true`, `schema:"macrobox_pos"`, `mode:"supabase"`.
 
 ## Supabase Data API
 
