@@ -30,7 +30,7 @@ export default async function BillPage({
         error.code,
       )
     ) {
-      redirect(`/login?next=${encodeURIComponent(`/bill/${orderId}`)}`);
+      redirect(`/customer/login?next=${encodeURIComponent(`/bill/${orderId}`)}`);
     }
     throw error;
   }

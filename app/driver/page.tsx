@@ -16,7 +16,7 @@ export default async function DriverPage() {
         error.code,
       )
     ) {
-      redirect("/login?next=/driver");
+      redirect("/driver/login?next=/driver");
     }
     throw error;
   }

@@ -220,7 +220,7 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
       notify.error("Sign-out failed", failure);
       return;
     }
-    router.push("/login");
+    router.push("/driver/login");
     router.refresh();
   }
 

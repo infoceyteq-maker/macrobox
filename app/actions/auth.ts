@@ -82,11 +82,21 @@ export async function signInAction(input: {
   return signInWithPassword(input.email, input.password);
 }
 
-/** One-click demo sign-in. The password stays server-side in .env.local. */
+/**
+ * One-click demo sign-in is restricted to the sandboxed PGlite preview. The
+ * production deployment never exposes demo buttons or a demo password.
+ */
 export async function signInDemoAction(
   role: AppRole,
 ): Promise<ActionResult<AuthSuccess>> {
   try {
+    if (!isLocalMode() && process.env.POS_ENABLE_DEMO_SIGNIN !== "true") {
+      throw new PosActionError(
+        "DEMO_SIGNIN_DISABLED",
+        "Demo accounts are disabled in production.",
+      );
+    }
+
     const email = DEMO_ACCOUNTS[role];
     if (!email) {
       throw new PosActionError("UNKNOWN_DEMO_ROLE", "Unknown demo role.");

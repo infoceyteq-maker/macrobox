@@ -1,7 +1,9 @@
 import { PGlite } from "@electric-sql/pglite";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CATALOG_SEED_MEALS } from "./catalog-seed";
+import type { CustomerAuthSuccess, CustomerRegistrationInput } from "./customer-auth";
 import { normalizeDatabaseError, PosActionError } from "./errors";
 import type { DashboardData, DashboardOrder, DirectoryUser } from "./dashboard-types";
 import type {
@@ -42,6 +44,14 @@ const CLEAR_RATE_MIGRATION_PATH = path.join(
 const PUBLIC_MENU_MIGRATION_PATH = path.join(
   process.cwd(),
   "supabase/migrations/202610270005_public_menu_read.sql",
+);
+const CUSTOMER_AUTH_MIGRATION_PATH = path.join(
+  process.cwd(),
+  "supabase/migrations/202610270006_customer_auth.sql",
+);
+const CUSTOMER_PHONE_MIGRATION_PATH = path.join(
+  process.cwd(),
+  "supabase/migrations/202610270007_customer_phone_normalization.sql",
 );
 
 const ROLE_LABELS: Record<AppRole, string> = {
@@ -166,6 +176,12 @@ async function initDb(): Promise<PGlite> {
 
   const publicMenuMigration = await fs.readFile(PUBLIC_MENU_MIGRATION_PATH, "utf8");
   await db.exec(publicMenuMigration);
+
+  const customerAuthMigration = await fs.readFile(CUSTOMER_AUTH_MIGRATION_PATH, "utf8");
+  await db.exec(customerAuthMigration);
+
+  const customerPhoneMigration = await fs.readFile(CUSTOMER_PHONE_MIGRATION_PATH, "utf8");
+  await db.exec(customerPhoneMigration);
 
   await db.exec(`
     create table if not exists public.local_auth_users (
@@ -307,6 +323,93 @@ export async function localSignIn(email: string, password: string): Promise<stri
     throw new PosActionError("SIGN_IN_FAILED", "Invalid email or password.");
   }
   return String(id);
+}
+
+/** Local preview equivalent of the server-side customer registration action. */
+export async function localRegisterCustomer(
+  input: CustomerRegistrationInput,
+): Promise<CustomerAuthSuccess> {
+  const db = await getLocalDb();
+  const email = input.email.trim().toLowerCase();
+
+  const duplicateEmail = await db.query<AnyRow>(
+    `select id from public.local_auth_users where lower(email) = lower($1)`,
+    [email],
+  );
+  if (duplicateEmail.rows[0]) {
+    throw new PosActionError(
+      "EMAIL_ALREADY_REGISTERED",
+      "That email is already registered. Sign in instead.",
+    );
+  }
+
+  const duplicatePhone = await db.query<AnyRow>(
+    `select id from public.app_users
+     where role = 'CUSTOMER'
+       and regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
+         = regexp_replace($1, '[^0-9]', '', 'g')`,
+    [input.phone],
+  );
+  if (duplicatePhone.rows[0]) {
+    throw new PosActionError(
+      "PHONE_ALREADY_REGISTERED",
+      "That phone number is already registered. Sign in instead.",
+    );
+  }
+
+  const id = randomUUID();
+  await db.query(
+    `insert into auth.users (id, email, raw_user_meta_data)
+     values ($1, $2, $3::jsonb)`,
+    [id, email, JSON.stringify({ name: input.name, phone: input.phone })],
+  );
+  await db.query(
+    `update public.app_users
+        set role = 'CUSTOMER', status = 'ACTIVE', name = $2, email = $3, phone = $4
+      where id = $1`,
+    [id, input.name, email, input.phone],
+  );
+  await db.query(
+    `insert into public.local_auth_users (id, email, password, role, name)
+     values ($1, $2, $3, 'CUSTOMER', $4)`,
+    [id, email, input.password, input.name],
+  );
+
+  return { userId: id, email, phone: input.phone };
+}
+
+/** Local preview sign-in using either the registered email or phone number. */
+export async function localCustomerSignIn(
+  identifier: string,
+  password: string,
+): Promise<CustomerAuthSuccess> {
+  const db = await getLocalDb();
+  const result = await db.query<AnyRow>(
+    `select l.id, l.email, a.phone, a.role, a.status
+       from public.local_auth_users l
+       join public.app_users a on a.id = l.id
+      where l.password = $2
+        and a.role = 'CUSTOMER'
+        and a.status = 'ACTIVE'
+        and (
+          lower(l.email) = lower($1)
+          or regexp_replace(coalesce(a.phone, ''), '[^0-9]', '', 'g')
+            = regexp_replace($1, '[^0-9]', '', 'g')
+        )`,
+    [identifier, password],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new PosActionError(
+      "INVALID_CREDENTIALS",
+      "Invalid email/phone or password.",
+    );
+  }
+  return {
+    userId: String(row.id),
+    email: String(row.email),
+    phone: row.phone ? String(row.phone) : null,
+  };
 }
 
 export async function localGetActor(userId: string): Promise<AppUserRow> {

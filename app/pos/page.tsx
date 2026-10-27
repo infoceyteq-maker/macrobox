@@ -9,7 +9,7 @@ export default async function PosPage() {
   try {
     data = await loadDashboardData();
   } catch {
-    redirect("/login?next=/pos");
+    redirect("/frontdesk/login?next=/pos");
   }
 
   return <PosDashboard initialData={data} />;

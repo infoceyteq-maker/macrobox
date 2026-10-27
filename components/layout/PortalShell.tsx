@@ -10,9 +10,11 @@ const NAV = [
   { href: "/", label: "Menu" },
   { href: "/cart", label: "Cart" },
   { href: "/orders", label: "Track" },
-  { href: "/driver", label: "Driver" },
-  { href: "/pos", label: "POS" },
-  { href: "/admin", label: "Master Admin" },
+  { href: "/customer/register", label: "Register" },
+  { href: "/customer/login", label: "Customer" },
+  { href: "/frontdesk/login", label: "Front Desk" },
+  { href: "/driver/login", label: "Driver" },
+  { href: "/admin/login", label: "Master Admin" },
 ];
 
 interface PortalShellProps {

@@ -149,7 +149,7 @@ The authoritative `calculate_transport_cost()` runs inside `transition_order_sta
 
 ## 6. Server Actions
 
-All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code, error, details? }`). Inputs are Zod-validated. All RPCs use the signed-in user's JWT via `auth.uid()`; no service-role key is required.
+All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code, error, details? }`). Inputs are Zod-validated. All order, lifecycle, financial, and employee RPCs use the signed-in user's JWT via `auth.uid()`; they do not require a service-role key. Customer provisioning in `app/actions/customer-auth.ts` is the only runtime path that uses `SUPABASE_SERVICE_ROLE_KEY`, and it is server-only.
 
 | Action | Backend effect |
 | --- | --- |
@@ -189,8 +189,13 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    NEXT_PUBLIC_SUPABASE_ANON_KEY=...
    NEXT_PUBLIC_SUPABASE_SCHEMA=macrobox_pos
    NEXT_PUBLIC_POS_LIVE_MODE=supabase
-   POS_DEMO_PASSWORD=... # optional, enables one-click demo sign-in
+   NEXT_PUBLIC_SITE_URL=https://your-project.vercel.app
+   SUPABASE_SERVICE_ROLE_KEY=... # server-only customer provisioning
    ```
+
+   `SUPABASE_SERVICE_ROLE_KEY` must be an encrypted/sensitive Vercel variable.
+   It is never imported by client code. `POS_DEMO_PASSWORD` is local-preview only
+   and should not be set in production.
 
    For sandboxed previews without outbound access to `*.supabase.co`, set
    `NEXT_PUBLIC_POS_LIVE_MODE=local`. The app then runs the same migration in
@@ -204,13 +209,17 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    psql "$DATABASE_URL" -f supabase/migrations/202610270001_pos_core.sql
    psql "$DATABASE_URL" -f supabase/migrations/202610270004_pos_clear_transport_rate.sql
    psql "$DATABASE_URL" -f supabase/migrations/202610270005_public_menu_read.sql
+   psql "$DATABASE_URL" -f supabase/migrations/202610270006_customer_auth.sql
+   psql "$DATABASE_URL" -f supabase/migrations/202610270007_customer_phone_normalization.sql
    ```
 
    On an existing project with conflicting `public.orders`, apply
    `202610270002_pos_isolated_schema.sql`,
    `202610270003_pos_ui_directory_rpcs.sql`,
-   `202610270004_pos_clear_transport_rate.sql`, and
-   `202610270005_public_menu_read.sql` instead, then set
+   `202610270004_pos_clear_transport_rate.sql`,
+   `202610270005_public_menu_read.sql`,
+   `202610270006_customer_auth.sql`, and
+   `202610270007_customer_phone_normalization.sql` instead, then set
    `NEXT_PUBLIC_SUPABASE_SCHEMA=macrobox_pos`.
 
 3. Promote the first Admin through a controlled server-side/SQL process, for example:

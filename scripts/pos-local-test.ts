@@ -3,10 +3,12 @@ import {
   getLocalDb,
   LOCAL_DEMO_USERS,
   localAssignDriver,
+  localCustomerSignIn,
   localClearTransportRate,
   localCreateCategory,
   localCreateOrder,
   localGetDeliverySettings,
+  localRegisterCustomer,
   localGetPublicMenu,
   localLoadDashboardData,
   localUpdateEmployee,
@@ -199,6 +201,33 @@ async function main() {
     salaryStructure: {},
   });
   check("Admin employee management update", employee.name === "MacroBox Customer Verified");
+
+  const newCustomer = await localRegisterCustomer({
+    name: "Local Auth Test Customer",
+    email: "new.customer@macrobox.local",
+    phone: "+94000000123",
+    password: "LocalTest123!",
+  });
+  check("Customer registered with email and phone", Boolean(newCustomer.userId));
+
+  const emailSignIn = await localCustomerSignIn(
+    "new.customer@macrobox.local",
+    "LocalTest123!",
+  );
+  check("Customer signs in with email", emailSignIn.userId === newCustomer.userId);
+
+  const phoneSignIn = await localCustomerSignIn("+94 000 000 123", "LocalTest123!");
+  check("Customer signs in with phone", phoneSignIn.userId === newCustomer.userId);
+
+  const db = await getLocalDb();
+  const phoneLookup = await db.query<{ email: string | null }>(
+    "select public.find_customer_signin_email($1) as email",
+    ["+94000000123"],
+  );
+  check(
+    "Server-only phone-to-email lookup works",
+    phoneLookup.rows[0]?.email === "new.customer@macrobox.local",
+  );
 
   console.log("\nALL LOCAL POS CHECKS PASSED");
 }

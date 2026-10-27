@@ -5,7 +5,8 @@ This map shows the customer, admin, driver, billing, print, and notification lay
 ```text
 app/
   actions/
-    auth.ts                    # local/Supabase sign-in, demo roles, sign-out
+    auth.ts                    # local/Supabase staff sign-in, sign-out
+    customer-auth.ts           # public customer registration + email/phone sign-in
     employees.ts               # Admin-only employee profile/role/status updates
     pos.ts                     # orders, lifecycle, transport, menu, delivery, settlement
     public-menu.ts             # anonymous active-menu read for cart/catalog
@@ -17,11 +18,19 @@ app/
   driver/page.tsx              # mobile-optimised Driver portal
   orders/page.tsx              # customer tracking page
   pos/page.tsx                 # unified POS dashboard
-  login/page.tsx               # branded sign-in + demo roles
+  login/page.tsx               # generic employee sign-in (no registration)
+  customer/login/page.tsx      # customer email/phone sign-in
+  customer/register/page.tsx   # public email + phone customer registration
+  admin/login/page.tsx         # Master Admin login (ADMIN only)
+  driver/login/page.tsx        # Driver login (DRIVER/ADMIN)
+  frontdesk/login/page.tsx     # Front Desk / POS login
   layout.tsx                   # fonts, global ToastProvider, CartProvider
   globals.css                  # Soft UI primitives + 80mm thermal @media print
 
 components/
+  auth/
+    CustomerAuthForm.tsx       # public register / email-or-phone sign-in
+    StaffLoginForm.tsx         # role-specific employee login, no self-registration
   LunchCatalog.tsx             # Monday–Friday cards, detail modal, macro progress, add-to-cart
   PosDashboard.tsx             # master control, orders, menu, employees, financials, documents
   CustomerOrders.tsx           # customer order list + tracking timeline
@@ -53,6 +62,8 @@ lib/
   brand.ts                     # exact supplied palette + contact line
   ui/toast.ts                  # notify() wrapper for return messages
   pos/
+    customer-auth.ts           # E.164 phone/email schemas and safe next-path helper
+    supabase-admin.ts          # server-only service-role client factory
     public-menu.ts             # public menu types + price-pending helper
     action-result.ts           # shared ActionResult wrapper
     local-db.ts                # PGlite engine + public menu + employee update
@@ -65,7 +76,19 @@ supabase/migrations/
   202610270003_pos_ui_directory_rpcs.sql
   202610270004_pos_clear_transport_rate.sql
   202610270005_public_menu_read.sql  # anon-active-menu RLS for public/macrobox_pos
+  202610270006_customer_auth.sql     # phone-aware Auth profile trigger + lookup RPC
+  202610270007_customer_phone_normalization.sql # digits-only E.164 phone matching
 ```
+
+## Production routing
+
+- Customer: `/`, `/cart`, `/customer/login`, `/customer/register`, `/orders`, `/bill/[orderId]`.
+- Master Admin: `/admin/login` → `/admin`.
+- Front Desk / POS: `/frontdesk/login` → `/pos`.
+- Driver: `/driver/login` → `/driver`.
+- Generic employee fallback: `/login` → `/pos`.
+
+`proxy.ts` excludes auth pages from protected-prefix matching, refreshes Supabase cookies, and consults `app_users.role/status` before allowing a protected route. See `DEPLOYMENT.md` for the live Vercel surfaces and environment variables.
 
 ## Design enforcement
 

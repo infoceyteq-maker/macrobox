@@ -82,3 +82,16 @@ The full implementation map is in `docs/FOLDER_STRUCTURE.md`. Key additions:
 - `supabase/migrations/202610270005_public_menu_read.sql` — anonymous RLS read for active menu items only; no prices or private order data are exposed.
 
 Print rules are in `app/globals.css`: `@page { size: 80mm auto; margin: 0; }` plus black-and-white, shadow-free `.thermal-print` output. No real prices, rates, salaries, Google Maps key, or health claims were invented; `0.00` still means “price pending”.
+
+## Production authentication and routes
+
+- Public menu: `/`; cart: `/cart`.
+- Customer registration: `/customer/register` (email + E.164 phone + password).
+- Customer sign-in: `/customer/login` (email **or** phone + password).
+- Customer tracking: `/orders`; digital e-bill: `/bill/[orderId]`.
+- Master Admin login: `/admin/login` (no self-registration); panel: `/admin`.
+- Front Desk / POS login: `/frontdesk/login`; dashboard: `/pos`.
+- Driver login: `/driver/login`; portal: `/driver`.
+- Generic employee login: `/login`.
+
+`proxy.ts` refreshes Supabase Auth cookies and uses the active database role to separate customer and employee surfaces. The service-role key is used only in `app/actions/customer-auth.ts` for customer provisioning and phone lookup; it is never exposed as `NEXT_PUBLIC_*`. See `DEPLOYMENT.md` for live links, Vercel environment variables, and production checks.

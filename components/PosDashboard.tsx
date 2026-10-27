@@ -497,7 +497,7 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
       setError(`[${result.code}] ${result.error}`);
       return;
     }
-    router.push("/login");
+    router.push(masterMode ? "/admin/login" : "/frontdesk/login");
     router.refresh();
   }
 

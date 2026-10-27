@@ -16,7 +16,7 @@ export default async function OrdersPage() {
         error.code,
       )
     ) {
-      redirect("/login?next=/orders");
+      redirect("/customer/login?next=/orders");
     }
     throw error;
   }

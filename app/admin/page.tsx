@@ -22,7 +22,7 @@ export default async function AdminPage() {
         error.code,
       )
     ) {
-      redirect("/login?next=/admin");
+      redirect("/admin/login?next=/admin");
     }
     throw error;
   }

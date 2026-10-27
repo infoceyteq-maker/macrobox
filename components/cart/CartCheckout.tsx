@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createOrderAction, getCurrentActorAction } from "@/app/actions/pos";
 import { signInDemoAction } from "@/app/actions/auth";
+import { isLocalMode } from "@/lib/pos/config";
 import { useCart } from "@/components/cart/cart-context";
 import { cn, formatAmount, NEU } from "@/components/ui/neu";
 import { notify } from "@/lib/ui/toast";
@@ -233,17 +234,22 @@ export default function CartCheckout() {
                   customer, or sign out and use a customer account.
                 </p>
               ) : null}
-              <Link href="/login?next=/cart" className={cn(NEU.buttonPrimary, "block w-full text-center")}>
-                Sign in to checkout
-              </Link>
-              <button
-                type="button"
-                onClick={demoSignIn}
-                disabled={busy}
-                className={cn(NEU.button, "w-full")}
+              <Link
+                href="/customer/login?next=/cart"
+                className={cn(NEU.buttonPrimary, "block w-full text-center")}
               >
-                Use demo customer
-              </button>
+                Sign in or register to checkout
+              </Link>
+              {isLocalMode() ? (
+                <button
+                  type="button"
+                  onClick={demoSignIn}
+                  disabled={busy}
+                  className={cn(NEU.button, "w-full")}
+                >
+                  Use local demo customer
+                </button>
+              ) : null}
             </div>
           )}
         </section>

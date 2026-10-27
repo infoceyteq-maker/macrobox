@@ -210,7 +210,7 @@ export default function CustomerOrders({ initialData }: { initialData: Dashboard
       notify.error("Sign-out failed", failure);
       return;
     }
-    router.push("/login");
+    router.push("/customer/login");
     router.refresh();
   }
 

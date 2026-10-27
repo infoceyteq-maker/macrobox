@@ -325,3 +325,15 @@ npm run build
 npm run start
 npm run test:pos
 ```
+
+### Production authentication and routing verification
+
+The new separated authentication layer was verified before deployment:
+
+- `npm run typecheck`, `npm run build`, and `npm run test:pos` passed. The local POS suite now includes customer registration, email sign-in, phone sign-in, and the server-only phone-to-email lookup (39 checks).
+- Local browser E2E passed 13/13: public menu, customer registration with email + phone, phone sign-in, protected Admin redirect, Admin-specific login with no self-registration, Driver/Front Desk/generic staff login routes, and no browser console or page errors.
+- Remote Supabase GoTrue smoke tests returned HTTP 200 for: Master Admin email/password sign-in, `auth.admin.createUser` with confirmed email + phone, direct phone/password sign-in, and email/password sign-in. The temporary smoke customer was deleted.
+- `macrobox_pos.find_customer_signin_email()` resolved the confirmed E.164 phone to the Auth email. Migration 007 normalises phone matching to digits only because GoTrue stores `auth.users.phone` without the leading `+`.
+- Production Vercel env vars were configured for URL, anon key, service-role key (sensitive), `macrobox_pos` schema, Supabase live mode, and production site URL.
+
+Screenshots: `screenshots/16-customer-registration.png` and `screenshots/17-admin-login-route.png`.
