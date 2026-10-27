@@ -1,5 +1,7 @@
 # MacroBox production deployment
 
+Final links and handover notes are also summarized in `FINAL_HANDOVER.md`.
+
 ## Live surfaces
 
 Canonical production origin: `https://macrobox-pos-live.vercel.app`
