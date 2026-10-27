@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ORDER_STATUSES } from "./types";
+import { APP_ROLES, EMPLOYEE_STATUSES, ORDER_STATUSES } from "./types";
 
 const uuid = z.uuid();
 const orderStatus = z.enum(ORDER_STATUSES);
@@ -156,3 +156,16 @@ export const upsertProductSchema = z
   .strict();
 
 export type UpsertProductInput = z.infer<typeof upsertProductSchema>;
+
+export const updateEmployeeSchema = z
+  .object({
+    userId: uuid,
+    role: z.enum(APP_ROLES),
+    status: z.enum(EMPLOYEE_STATUSES),
+    name: z.string().trim().min(1).max(160),
+    phone: z.string().trim().max(40).nullable().optional(),
+    salaryStructure: jsonObject.optional(),
+  })
+  .strict();
+
+export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;

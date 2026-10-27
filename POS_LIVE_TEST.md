@@ -7,8 +7,11 @@
 - Staff login: `/login`
 - Unified Admin/POS dashboard: `/pos`
 - Customer order tracking: `/orders`
+- Cart & COD checkout: `/cart`
 - Focused Driver portal: `/driver`
-- “Track my orders →” and “Staff / POS →” links are on the catalog.
+- Omnipotent Master Admin: `/admin`
+- Shareable digital e-bill: `/bill/[orderId]`
+- “Track my orders →”, “Master Admin →”, and “Staff / POS →” links are on the catalog.
 
 The original Monday–Friday catalog UI, exact supplied copy, logo, fonts, brand greens, and meal images are unchanged.
 
@@ -157,6 +160,16 @@ NEXT_PUBLIC_POS_LIVE_MODE=supabase
 
 Driver RBAC was browser-tested: a Driver cannot see the Admin transport form or the New order tab.
 
+### Complete module layer added
+
+- **Customer menu** — Monday–Friday cards, detail modal with exact grammages and macro progress bars, global cart drawer, and `/cart` COD checkout.
+- **Tracking** — `/orders` now includes a simulated live route, ETA, return messages (“Order Accepted”, “Driver on the way”), status timeline, and e-bill link.
+- **Omnipotent Admin** — `/admin` adds incoming-order quick control (Accept, Preparing, Ready bypass, Assign & dispatch), Employees, Financials, Menu, Documents, Settings, and Audit.
+- **Driver app** — `/driver` shows assigned orders, a Google Maps placeholder, live final e-bill, drawn e-signature, and “Delivered & Cash Collected”.
+- **Documents** — `EBill`, `ThermalReceipt`, and `OrderDocuments` provide shareable neumorphic invoices plus 80mm black-and-white KOT / bill printing.
+- **Notifications** — global `sonner` toasts for New Order Received, Order Dispatched, Payment Settled, cart actions, employee saves, print actions, and delivery evidence.
+- **Public menu RLS** — migration `202610270005_public_menu_read.sql` grants `anon` read access to active categories/products only; no order or user data is exposed.
+
 ---
 
 ## 7. Verification results
@@ -165,7 +178,7 @@ Driver RBAC was browser-tested: a Driver cannot see the Admin transport form or 
 
 ```bash
 npm run typecheck   # PASS
-npm run build       # PASS
+npm run build       # PASS — /admin, /cart, /bill, /bill/[orderId], /driver, /orders, /pos
 npm run test:pos    # PASS
 ```
 
@@ -183,7 +196,10 @@ npm run test:pos    # PASS
 - audit events,
 - Driver blocked from Admin category creation,
 - Driver blocked from clearing the transport rate,
-- Admin `clear_transport_rate()` returning the rate to `null`.
+- Admin `clear_transport_rate()` returning the rate to `null`,
+- anonymous active-menu read with five price-pending products,
+- Driver blocked from employee management,
+- Admin employee profile update.
 
 ### Browser E2E on the live preview
 
@@ -217,6 +233,11 @@ Screenshots:
 - `screenshots/08-drawn-signature.png`
 - `screenshots/09-clear-rate.png`
 - `screenshots/10-driver-role.png`
+- `screenshots/11-catalog-cart.png`
+- `screenshots/12-customer-tracking.png`
+- `screenshots/13-digital-ebill.png`
+- `screenshots/14-master-admin.png`
+- `screenshots/15-documents-print.png`
 
 ### Continuation browser E2E
 
@@ -244,6 +265,24 @@ A second focused browser pass verified the new customer tracking, Driver portal,
 
 The drawn signature is stored directly in `delivery_signature_url`; no external storage bucket was needed for verification.
 
+### Complete-module browser E2E
+
+11/11 checks passed on the rebuilt production preview:
+
+1. Catalog detail modal shows ingredients, macro progress bars, and adds to the global cart.
+2. COD checkout creates a PENDING order as the demo customer.
+3. `/orders` renders simulated live location, ETA, and return messages.
+4. `/bill/[orderId]` renders the digital e-bill and Print KOT / Print Bill actions.
+5. Admin can enter `/admin` and see the Omnipotent Master Admin control dashboard.
+6. Employees view renders employee management.
+7. Financials view renders provisional P&L and CSV export.
+8. Documents view renders e-bill sharing and thermal print actions.
+9. Master Admin quick control dispatches the order.
+10. Driver portal renders the Google Maps placeholder and final e-bill.
+11. No browser console errors or unexpected failed network requests.
+
+Screenshots `11`–`15` capture the new customer, Admin, tracking, e-bill, and document flows.
+
 ### Remote Supabase SQL lifecycle test
 
 A full lifecycle was also run directly against the connected project through the connector, independent of the sandbox network block:
@@ -261,6 +300,8 @@ A full lifecycle was also run directly against the connected project through the
 A temporary test rate of `1.00/km` with `2.00 km` free was used only to exercise dynamic billing. The remote rate was reset to `null`; no business rate is stored.
 
 The Admin-only `macrobox_pos.clear_transport_rate()` RPC from migration `202610270004_pos_clear_transport_rate.sql` was also applied and verified remotely: an Admin can set and then clear a test rate, a Driver is blocked with `TRANSPORT_RATE_ADMIN_ONLY`, and the final remote `per_km_rate` is `null`.
+
+Migration `202610270005_public_menu_read.sql` was applied and verified remotely: `macrobox_pos.products` and `macrobox_pos.categories` now expose `public_menu_read_*` policies to `anon`, scoped to `is_active = true`. The existing `app_users_admin_write` policy remains in place for Admin employee updates.
 
 ---
 

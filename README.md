@@ -68,3 +68,17 @@ The POS/Restaurant Management layer is documented in `POS_BACKEND.md`; live setu
 - `scripts/pos-local-test.ts` — automated SQL-level lifecycle test (`npm run test:pos`).
 
 The catalog remains at `/`; “Track my orders →” opens `/orders` and “Staff / POS →” opens `/login` and `/pos`. Drivers and Admins can also use `/driver`.
+
+## Complete module layer
+
+The full implementation map is in `docs/FOLDER_STRUCTURE.md`. Key additions:
+
+- `/cart` — neumorphic cart drawer + full Cash-on-Delivery checkout.
+- `/admin` — Omnipotent Master Admin dashboard with incoming-order quick control, employee management, provisional P&L, menu visibility, e-bills, and KOT printing.
+- `/driver` — mobile-optimised assigned orders, Google Maps placeholder, dynamic final e-bill, drawn signature, and “Delivered & Cash Collected”.
+- `/orders` — simulated live driver location, ETA, return messages, and status timeline.
+- `/bill/[orderId]` — shareable digital e-bill with 80mm thermal print output.
+- Global `sonner` toasts for New Order Received, Order Accepted, Order Dispatched, Payment Settled, and other return messages.
+- `supabase/migrations/202610270005_public_menu_read.sql` — anonymous RLS read for active menu items only; no prices or private order data are exposed.
+
+Print rules are in `app/globals.css`: `@page { size: 80mm auto; margin: 0; }` plus black-and-white, shadow-free `.thermal-print` output. No real prices, rates, salaries, Google Maps key, or health claims were invented; `0.00` still means “price pending”.

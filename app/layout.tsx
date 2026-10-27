@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 
 import "./globals.css";
+import ToastProvider from "@/components/ui/ToastProvider";
+import CartProvider from "@/components/cart/CartProvider";
 
 const poppins = localFont({
   src: [
@@ -55,7 +57,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${poppins.variable} ${montserrat.variable}`}>
       <body className="min-h-screen bg-[#DCE6DA] font-sans text-[#2C3E50] antialiased">
-        {children}
+        <ToastProvider />
+        <CartProvider>{children}</CartProvider>
       </body>
     </html>
   );

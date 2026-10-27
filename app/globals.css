@@ -4,3 +4,194 @@
   --font-sans: var(--font-poppins);
   --font-display: var(--font-montserrat);
 }
+
+:root {
+  --macrobox-sage: #dce6da;
+  --macrobox-sage-deep: #8fbc8f;
+  --macrobox-sage-accent: #7ca982;
+  --macrobox-cream: #f7f6f2;
+  --macrobox-charcoal: #2e3033;
+}
+
+html {
+  background: var(--macrobox-sage);
+}
+
+body {
+  background: var(--macrobox-sage);
+  color: var(--macrobox-charcoal);
+}
+
+/* Shared Soft UI primitives used across customer, admin, billing, and driver UI. */
+.mb-soft-card {
+  border-radius: 1.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: #dce6da;
+  box-shadow: 10px 10px 22px #b7c4b5, -10px -10px 22px #ffffff;
+}
+
+.mb-soft-inset {
+  border-radius: 1rem;
+  background: #dce6da;
+  box-shadow: inset 7px 7px 14px #b7c4b5, inset -7px -7px 14px #ffffff;
+}
+
+.mb-soft-button {
+  border-radius: 1rem;
+  background: #f7f6f2;
+  color: #3d4a42;
+  box-shadow: 6px 6px 13px #c6d0c2, -6px -6px 13px #ffffff;
+}
+
+.mb-soft-button:active {
+  box-shadow: inset 6px 6px 12px #b7c4b5, inset -6px -6px 12px #ffffff;
+}
+
+.mb-soft-button-primary {
+  border-radius: 1rem;
+  background: #8fbc8f;
+  color: #22301f;
+  box-shadow: 6px 6px 13px #a9b9a7, -6px -6px 13px #ffffff;
+}
+
+.mb-soft-button-primary:hover {
+  background: #7ca982;
+}
+
+.mb-soft-button-primary:active {
+  box-shadow: inset 6px 6px 12px #7ba47d, inset -6px -6px 12px #a4d4a1;
+}
+
+/* Print surfaces are hidden on screen and become the only visible output. */
+.print-only,
+.thermal-print {
+  display: none;
+}
+
+@page {
+  size: 80mm auto;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: economy;
+    print-color-adjust: economy;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .thermal-print,
+  .thermal-print * {
+    visibility: visible !important;
+  }
+
+  .thermal-print {
+    display: block !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    z-index: 9999 !important;
+    box-sizing: border-box !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 4mm 4mm 8mm !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    font-family: "Courier New", ui-monospace, monospace !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+  }
+
+  .thermal-print * {
+    background: transparent !important;
+    color: #000000 !important;
+    border-color: #000000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    filter: none !important;
+  }
+
+  .thermal-print h1,
+  .thermal-print h2,
+  .thermal-print h3,
+  .thermal-print p,
+  .thermal-print ul,
+  .thermal-print ol,
+  .thermal-print table {
+    margin: 0 0 6px !important;
+    padding: 0 !important;
+    color: #000000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .thermal-print .thermal-title {
+    font-size: 18px !important;
+    font-weight: 700 !important;
+    letter-spacing: 1px !important;
+    text-align: center !important;
+  }
+
+  .thermal-print .thermal-center {
+    text-align: center !important;
+  }
+
+  .thermal-print .thermal-right {
+    text-align: right !important;
+  }
+
+  .thermal-print .thermal-row {
+    display: flex !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+  }
+
+  .thermal-print .thermal-dashed {
+    border-top: 1px dashed #000000 !important;
+    margin: 6px 0 !important;
+  }
+
+  .thermal-print .thermal-solid {
+    border-top: 1px solid #000000 !important;
+    margin: 6px 0 !important;
+  }
+
+  .thermal-print table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  .thermal-print th,
+  .thermal-print td {
+    padding: 2px 0 !important;
+    text-align: left !important;
+    vertical-align: top !important;
+  }
+
+  .thermal-print th:last-child,
+  .thermal-print td:last-child {
+    text-align: right !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+}

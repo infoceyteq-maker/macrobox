@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import SignaturePad from "@/components/SignaturePad";
+import DeliveryMapPlaceholder from "@/components/tracking/DeliveryMapPlaceholder";
+import EBill from "@/components/billing/EBill";
+import { notify } from "@/lib/ui/toast";
 import { signOutAction } from "@/app/actions/auth";
 import { getDashboardDataAction, recordDeliveryAction } from "@/app/actions/pos";
 import type { DashboardData, DashboardOrder } from "@/lib/pos/dashboard-types";
@@ -197,8 +200,11 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
       setData(result.data);
       setForms((previous) => mergeForms(previous, result.data));
       setMessage("Assignments refreshed.");
+      notify.success("Assignments updated", "Latest driver orders loaded.");
     } else {
-      setMessage(`[${result.code}] ${result.error}`);
+      const failure = `[${result.code}] ${result.error}`;
+      setMessage(failure);
+      notify.error("Refresh failed", failure);
     }
     setGlobalBusy(false);
     router.refresh();
@@ -209,7 +215,9 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
     const result = await signOutAction();
     setGlobalBusy(false);
     if (!result.ok) {
-      setMessage(`[${result.code}] ${result.error}`);
+      const failure = `[${result.code}] ${result.error}`;
+      setMessage(failure);
+      notify.error("Sign-out failed", failure);
       return;
     }
     router.push("/login");
@@ -264,10 +272,14 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
     });
     setBusyOrder(null);
     if (!result.ok) {
-      setMessage(`[${result.code}] ${result.error}`);
+      const failure = `[${result.code}] ${result.error}`;
+      setMessage(failure);
+      notify.error("Delivery not recorded", failure);
       return;
     }
-    setMessage(`Order #${shortId(order.id)} marked delivered.`);
+    const success = `Order #${shortId(order.id)} marked delivered.`;
+    setMessage(success);
+    notify.success("Delivered & Cash Collected", `${success} Signature and cash evidence stored.`);
     const refreshed = await getDashboardDataAction();
     if (refreshed.ok) {
       setData(refreshed.data);
@@ -361,6 +373,11 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
                 form.signatureUrl.length > 0 &&
                 busyOrder === null &&
                 !globalBusy;
+              const foodAmount = asNumber(order.total_food_cost);
+              const transportAmount =
+                expected === null ? 0 : Math.max(0, expected - foodAmount);
+              const distanceValue =
+                form.distanceKm === "" ? null : Number(form.distanceKm);
               return (
                 <article key={order.id} className={`${neu} p-5 sm:p-6`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -402,6 +419,38 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
                         {expected === null ? "Pending" : expected.toFixed(2)}
                       </p>
                     </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+                    <DeliveryMapPlaceholder
+                      status={order.status}
+                      address={order.delivery_address}
+                      distanceKm={
+                        distanceValue !== null && Number.isFinite(distanceValue)
+                          ? distanceValue
+                          : order.distance_km === null
+                            ? null
+                            : asNumber(order.distance_km)
+                      }
+                    />
+                    <EBill
+                      order={order}
+                      settings={data.settings}
+                      foodTotal={foodAmount}
+                      transportCost={transportAmount}
+                      finalTotal={expected ?? order.final_total}
+                      distanceKm={
+                        distanceValue !== null && Number.isFinite(distanceValue)
+                          ? distanceValue
+                          : order.distance_km === null
+                            ? null
+                            : asNumber(order.distance_km)
+                      }
+                      schema={data.schema}
+                      compact
+                      showActions={false}
+                      heading="Final e-bill · live"
+                    />
                   </div>
 
                   <div className="mt-5 grid gap-5 lg:grid-cols-2">
@@ -480,7 +529,7 @@ export default function DriverPortal({ initialData }: { initialData: DashboardDa
                           ? "Recording delivery…"
                           : expected === null
                             ? "Awaiting transport setup"
-                            : `Mark delivered · collect ${expected.toFixed(2)}`}
+                            : `Delivered & Cash Collected · ${expected.toFixed(2)}`}
                       </button>
                     </div>
                   </div>

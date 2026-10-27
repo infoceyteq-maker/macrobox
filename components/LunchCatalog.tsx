@@ -17,6 +17,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { useCart } from "@/components/cart/cart-context";
 
 export interface Meal {
   id: string;
@@ -291,6 +292,27 @@ const macroDetails: ReadonlyArray<{ key: MacroKey; label: string }> = [
   { key: "fat", label: "Fat" },
   { key: "calories", label: "Calories" },
 ];
+
+function macroValue(value: string): number {
+  const match = value.match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : 0;
+}
+
+const MACRO_MAXIMA = macroDetails.reduce(
+  (accumulator, { key }) => {
+    accumulator[key] = Math.max(
+      ...lunchMenu.map((meal) => macroValue(meal.macros[key])),
+      1,
+    );
+    return accumulator;
+  },
+  {} as Record<MacroKey, number>,
+);
+
+function macroProgress(key: MacroKey, value: string): number {
+  const maximum = MACRO_MAXIMA[key] || 1;
+  return Math.min(100, Math.max(8, (macroValue(value) / maximum) * 100));
+}
 
 const artworkThemes = [
   {
@@ -597,6 +619,7 @@ export interface LunchCatalogProps {
 
 export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
   const menu = useMealMenu(mealUpdates);
+  const { addMeal, openCart, menuLoading } = useCart();
   const [activeDayId, setActiveDayId] = useState(lunchMenu[0].id);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scrollState, setScrollState] = useState<ScrollState>({
@@ -999,6 +1022,12 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
                         <p className="mt-0.5 font-display text-[11px] font-bold whitespace-nowrap text-[#2C3E50] sm:text-xs">
                           {meal.macros[macroKey]}
                         </p>
+                        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#c3d1bf] shadow-[inset_2px_2px_4px_#aebfaa,inset_-2px_-2px_4px_#f8fbf4]">
+                          <div
+                            className="h-full rounded-full bg-[#8FBC8F]"
+                            style={{ width: `${macroProgress(macroKey, meal.macros[macroKey])}%` }}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1288,6 +1317,12 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
                           <p className="mt-3 font-display text-xl leading-none font-bold tracking-[-0.04em] text-[#2C3E50] sm:text-2xl">
                             {selectedMeal.macros[key]}
                           </p>
+                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#bccbb8] shadow-[inset_3px_3px_6px_#9fb19b,inset_-3px_-3px_6px_#f4faf0]">
+                            <div
+                              className={cn("h-full rounded-full", ACCENT_SURFACE)}
+                              style={{ width: `${macroProgress(key, selectedMeal.macros[key])}%` }}
+                            />
+                          </div>
                           <div
                             className={cn(
                               "absolute right-3 bottom-3 h-1.5 w-10 rounded-full opacity-35 shadow-[inset_1px_1px_2px_rgba(100,130,100,0.25)]",
@@ -1299,21 +1334,52 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
                     </div>
                   </section>
 
-                  <motion.button
-                    type="button"
-                    onClick={closeMeal}
-                    whileHover={reduceMotion ? undefined : { y: -2 }}
-                    whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-                    className={cn(
-                      "mt-8 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/70 bg-[#DCE6DA] px-6 py-3.5 text-sm font-semibold text-[#2C3E50] sm:w-auto sm:self-start",
-                      RAISED_SMALL,
-                      PRESSED_ON_ACTIVE,
-                      FOCUS_RING,
-                    )}
-                  >
-                    <ArrowIcon direction="left" />
-                    Back to week
-                  </motion.button>
+                  <div className="mt-8 flex flex-wrap gap-3">
+                    <motion.button
+                      type="button"
+                      disabled={menuLoading}
+                      onClick={() => addMeal(selectedMeal, 1)}
+                      whileHover={reduceMotion ? undefined : { y: -2 }}
+                      whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+                      className={cn(
+                        "flex items-center justify-center gap-2 rounded-2xl border border-white/70 bg-[#8FBC8F] px-6 py-3.5 text-sm font-bold text-[#22301f] disabled:opacity-55",
+                        RAISED_SMALL,
+                        PRESSED_ON_ACTIVE,
+                        FOCUS_RING,
+                      )}
+                    >
+                      {menuLoading ? "Syncing menu…" : "Add to cart"}
+                    </motion.button>
+                    <motion.button
+                      type="button"
+                      onClick={openCart}
+                      whileHover={reduceMotion ? undefined : { y: -2 }}
+                      whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+                      className={cn(
+                        "flex items-center justify-center gap-2 rounded-2xl border border-white/70 bg-[#DCE6DA] px-6 py-3.5 text-sm font-semibold text-[#2C3E50]",
+                        RAISED_SMALL,
+                        PRESSED_ON_ACTIVE,
+                        FOCUS_RING,
+                      )}
+                    >
+                      View cart
+                    </motion.button>
+                    <motion.button
+                      type="button"
+                      onClick={closeMeal}
+                      whileHover={reduceMotion ? undefined : { y: -2 }}
+                      whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+                      className={cn(
+                        "flex items-center justify-center gap-2 rounded-2xl border border-white/70 bg-[#DCE6DA] px-6 py-3.5 text-sm font-semibold text-[#2C3E50]",
+                        RAISED_SMALL,
+                        PRESSED_ON_ACTIVE,
+                        FOCUS_RING,
+                      )}
+                    >
+                      <ArrowIcon direction="left" />
+                      Back to week
+                    </motion.button>
+                  </div>
                 </motion.div>
               </div>
             </motion.section>

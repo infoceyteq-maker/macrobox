@@ -7,7 +7,9 @@ import {
   localCreateCategory,
   localCreateOrder,
   localGetDeliverySettings,
+  localGetPublicMenu,
   localLoadDashboardData,
+  localUpdateEmployee,
   localSetTransportRate,
   localSignIn,
   localTransition,
@@ -38,6 +40,17 @@ async function main() {
   check(
     "Transport rate starts unconfigured",
     initial.settings.per_km_rate === null,
+  );
+
+  const publicMenu = await localGetPublicMenu();
+  check(
+    "Public menu readable without a session",
+    publicMenu.products.length === 5 && publicMenu.categories.length === 5,
+    `${publicMenu.products.length} products / ${publicMenu.categories.length} categories`,
+  );
+  check(
+    "Public menu keeps price-pending placeholders",
+    publicMenu.products.every((product) => Number(product.basePrice) === 0),
   );
 
   const settings = await localSetTransportRate(ADMIN.id, {
@@ -160,6 +173,32 @@ async function main() {
   check("Admin cleared transport rate", cleared.per_km_rate === null);
   const afterClear = await localGetDeliverySettings();
   check("Cleared rate persisted", afterClear.per_km_rate === null);
+
+  let employeeBlocked = false;
+  try {
+    await localUpdateEmployee(DRIVER.id, {
+      userId: CUSTOMER.id,
+      role: "CUSTOMER",
+      status: "ACTIVE",
+      name: "Should Fail",
+      phone: null,
+      salaryStructure: {},
+    });
+  } catch (error) {
+    employeeBlocked =
+      error instanceof Error && /ADMIN|FORBIDDEN|role/i.test(error.message);
+  }
+  check("Driver blocked from employee management", employeeBlocked);
+
+  const employee = await localUpdateEmployee(ADMIN.id, {
+    userId: CUSTOMER.id,
+    role: "CUSTOMER",
+    status: "ACTIVE",
+    name: "MacroBox Customer Verified",
+    phone: null,
+    salaryStructure: {},
+  });
+  check("Admin employee management update", employee.name === "MacroBox Customer Verified");
 
   console.log("\nALL LOCAL POS CHECKS PASSED");
 }

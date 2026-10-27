@@ -22,8 +22,14 @@ import type {
   CreateOrderInput,
   SetProductVisibilityInput,
   SetTransportRateInput,
+  UpdateEmployeeInput,
   UpsertProductInput,
 } from "./schemas";
+import type {
+  PublicMenuCategory,
+  PublicMenuData,
+  PublicMenuProduct,
+} from "./public-menu";
 
 const MIGRATION_PATH = path.join(
   process.cwd(),
@@ -32,6 +38,10 @@ const MIGRATION_PATH = path.join(
 const CLEAR_RATE_MIGRATION_PATH = path.join(
   process.cwd(),
   "supabase/migrations/202610270004_pos_clear_transport_rate.sql",
+);
+const PUBLIC_MENU_MIGRATION_PATH = path.join(
+  process.cwd(),
+  "supabase/migrations/202610270005_public_menu_read.sql",
 );
 
 const ROLE_LABELS: Record<AppRole, string> = {
@@ -153,6 +163,9 @@ async function initDb(): Promise<PGlite> {
 
   const clearRateMigration = await fs.readFile(CLEAR_RATE_MIGRATION_PATH, "utf8");
   await db.exec(clearRateMigration);
+
+  const publicMenuMigration = await fs.readFile(PUBLIC_MENU_MIGRATION_PATH, "utf8");
+  await db.exec(publicMenuMigration);
 
   await db.exec(`
     create table if not exists public.local_auth_users (
@@ -395,6 +408,89 @@ export async function localClearTransportRate(
       [],
     );
     return serialize<DeliverySettingsRow>(row);
+  });
+}
+
+export async function localGetPublicMenu(): Promise<PublicMenuData> {
+  const db = await getLocalDb();
+  const [categoriesResult, productsResult] = await Promise.all([
+    db.query<AnyRow>(
+      `select id, name, slug, sort_order, is_active
+       from public.categories
+       where is_active
+       order by sort_order, name`,
+    ),
+    db.query<AnyRow>(
+      `select p.id, p.title, p.category_id, p.base_price, p.is_active,
+              c.name as category_name, c.slug as category_slug
+       from public.products p
+       join public.categories c on c.id = p.category_id
+       where p.is_active and c.is_active
+       order by c.sort_order, p.title`,
+    ),
+  ]);
+
+  const categories = serialize<PublicMenuCategory[]>(
+    categoriesResult.rows.map((row: AnyRow) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      sortOrder: Number(row.sort_order),
+      isActive: Boolean(row.is_active),
+    })),
+  );
+  const products = serialize<PublicMenuProduct[]>(
+    productsResult.rows.map((row: AnyRow) => ({
+      id: row.id,
+      title: row.title,
+      categoryId: row.category_id,
+      categoryName: row.category_name,
+      categorySlug: row.category_slug,
+      basePrice: row.base_price,
+      isActive: Boolean(row.is_active),
+    })),
+  );
+
+  return {
+    products,
+    categories,
+    generatedAt: new Date().toISOString(),
+    mode: "local",
+  };
+}
+
+export async function localUpdateEmployee(
+  actorId: string,
+  input: UpdateEmployeeInput,
+): Promise<AppUserRow> {
+  await assertRole(actorId, ["ADMIN"]);
+  return asUser(actorId, async (tx) => {
+    const row = await queryOne<AnyRow>(
+      tx,
+      `update public.app_users
+          set role = $2::public.app_role,
+              status = $3::public.employee_status,
+              name = $4,
+              phone = $5,
+              salary_structure = $6::jsonb
+        where id = $1
+        returning *`,
+      [
+        input.userId,
+        input.role,
+        input.status,
+        input.name,
+        input.phone ?? null,
+        JSON.stringify(input.salaryStructure ?? {}),
+      ],
+    );
+    await tx.query(
+      `update public.local_auth_users
+          set role = $2::public.app_role, name = $3
+        where id = $1`,
+      [input.userId, input.role, input.name],
+    );
+    return serialize<AppUserRow>(row);
   });
 }
 

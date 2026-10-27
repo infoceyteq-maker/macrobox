@@ -3,9 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import SignaturePad from "@/components/SignaturePad";
+import MasterOrderControl from "@/components/admin/MasterOrderControl";
+import EmployeesPanel from "@/components/admin/EmployeesPanel";
+import FinancialsPanel from "@/components/admin/FinancialsPanel";
+import OrderDocuments from "@/components/billing/OrderDocuments";
+import { notify } from "@/lib/ui/toast";
 import { signOutAction } from "@/app/actions/auth";
 import {
   assignDriverAction,
@@ -38,7 +43,18 @@ import {
   type ProductRow,
 } from "@/lib/pos/types";
 
-const TABS = ["overview", "orders", "new", "menu", "settings", "audit"] as const;
+const TABS = [
+  "overview",
+  "control",
+  "orders",
+  "new",
+  "menu",
+  "employees",
+  "financials",
+  "documents",
+  "settings",
+  "audit",
+] as const;
 type Tab = (typeof TABS)[number];
 
 const SIMPLE_STATUSES: OrderStatus[] = ["ACCEPTED", "PREPARING", "READY"];
@@ -80,6 +96,7 @@ const quiet =
 
 interface PosDashboardProps {
   initialData: DashboardData;
+  masterMode?: boolean;
 }
 
 interface NewOrderFormState {
@@ -258,10 +275,10 @@ function directoryName(user: DirectoryUser | null | undefined, fallbackId?: stri
   return user?.name || user?.email || shortId(fallbackId);
 }
 
-export default function PosDashboard({ initialData }: PosDashboardProps) {
+export default function PosDashboard({ initialData, masterMode = false }: PosDashboardProps) {
   const router = useRouter();
   const [data, setData] = useState<DashboardData>(initialData);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(masterMode && initialData.actor.role === "ADMIN" ? "control" : "overview");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(
     initialData.orders[0]?.id ?? null,
   );
@@ -349,6 +366,34 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
     };
   }, [data.orders]);
 
+  const knownStatusesRef = useRef<Map<string, OrderStatus> | null>(null);
+  useEffect(() => {
+    const current = new Map(data.orders.map((order) => [order.id, order.status]));
+    const known = knownStatusesRef.current;
+    if (!known) {
+      knownStatusesRef.current = current;
+      return;
+    }
+    for (const [id, status] of current) {
+      const previous = known.get(id);
+      if (!previous) {
+        if (status === "PENDING") {
+          notify.info("New Order Received", `Order #${shortId(id)} is waiting for acceptance.`);
+        }
+        continue;
+      }
+      if (previous === status) continue;
+      if (status === "DISPATCHED") {
+        notify.info("Order Dispatched", `Order #${shortId(id)} is on the way.`);
+      } else if (status === "CLOSED") {
+        notify.success("Payment Settled", `Order #${shortId(id)} is closed.`);
+      } else {
+        notify.success(`Order ${STATUS_LABELS[status]}`, `Order #${shortId(id)} updated.`);
+      }
+    }
+    knownStatusesRef.current = current;
+  }, [data.orders]);
+
   useEffect(() => {
     setRateForm({
       perKmRate:
@@ -405,14 +450,20 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
     try {
       const result = await fn();
       if (!result.ok) {
-        setError(`[${result.code}] ${result.error}`);
+        const failure = `[${result.code}] ${result.error}`;
+        setError(failure);
+        notify.error(label, failure);
         return null;
       }
-      setMessage(successMessage ?? `${label} completed.`);
+      const success = successMessage ?? `${label} completed.`;
+      setMessage(success);
+      notify.success(label, success);
       await refreshData();
       return result.data;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unexpected error.");
+      const failure = caught instanceof Error ? caught.message : "Unexpected error.";
+      setError(failure);
+      notify.error(label, failure);
       return null;
     } finally {
       setBusy(false);
@@ -992,6 +1043,17 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
           </div>
         </SectionCard>
 
+        {role !== "CUSTOMER" ? (
+          <OrderDocuments
+            orders={[order]}
+            settings={data.settings}
+            roleLabels={data.roleLabels}
+            schema={data.schema}
+            compact
+            initialOrderId={order.id}
+          />
+        ) : null}
+
         <SectionCard title="Order timeline" subtitle="Status history and audit metadata">
           {history.length === 0 ? (
             <EmptyState title="No transitions yet" hint="The first status change will appear here." />
@@ -1548,6 +1610,73 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
     );
   }
 
+  function renderControl() {
+    return (
+      <div className="space-y-6">
+        <MasterOrderControl
+          orders={data.orders}
+          drivers={data.drivers}
+          busy={busy}
+          run={run}
+          onOpen={(orderId) => {
+            setSelectedOrderId(orderId);
+            setTab("orders");
+          }}
+        />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <SectionCard title="Master Admin scope" subtitle="Unified control across the operation">
+            <div className="space-y-3 text-sm leading-6 text-[#4b5550]">
+              <div className={`${inset} px-4 py-3`}>Orders, kitchen flow, driver assignment, delivery evidence, and settlement.</div>
+              <div className={`${inset} px-4 py-3`}>Employees, financial ledger, menu visibility, transport settings, e-bills, and KOT printing.</div>
+              <p className="text-xs text-[#6f7a74]">
+                Admin can bypass normal lifecycle edges, but the database still requires delivery signature,
+                matching cash, and settlement evidence before an order is finalised.
+              </p>
+            </div>
+          </SectionCard>
+          <SectionCard title="Quick links" subtitle="Open the dedicated workspaces">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Link href="/orders" className={secondary}>Customer tracking</Link>
+              <Link href="/driver" className={secondary}>Driver portal</Link>
+              <Link href="/cart" className={secondary}>Digital menu &amp; cart</Link>
+              <Link href="/orders" className={secondary}>Order documents</Link>
+            </div>
+            <p className="mt-4 text-xs text-[#6f7a74]">
+              Open any order in the Documents tab to share its e-bill or print an 80mm KOT / bill.
+            </p>
+          </SectionCard>
+        </div>
+      </div>
+    );
+  }
+
+  function renderEmployees() {
+    return (
+      <EmployeesPanel
+        users={data.users}
+        isAdmin={isAdmin}
+        onUpdated={refreshData}
+      />
+    );
+  }
+
+  function renderFinancials() {
+    return (
+      <FinancialsPanel orders={data.orders} settings={data.settings} schema={data.schema} />
+    );
+  }
+
+  function renderDocuments() {
+    return (
+      <OrderDocuments
+        orders={data.orders}
+        settings={data.settings}
+        roleLabels={data.roleLabels}
+        schema={data.schema}
+      />
+    );
+  }
+
   function renderSettings() {
     function clearRate() {
       if (!isAdmin) {
@@ -1733,7 +1862,53 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
     );
   }
 
-  const visibleTabs = TABS.filter((item) => item !== "new" || canCreateOrder);
+  const visibleTabs = TABS.filter((item) => {
+    if (item === "new") return canCreateOrder;
+    if (item === "control" || item === "employees") return isAdmin;
+    if (item === "financials") return canManage;
+    if (item === "documents") return role !== "CUSTOMER";
+    return true;
+  });
+
+  const TAB_LABELS: Record<Tab, string> = {
+    overview: "Overview",
+    control: "Control",
+    orders: "Orders",
+    new: "New order",
+    menu: "Menu",
+    employees: "Employees",
+    financials: "Financials",
+    documents: "Documents",
+    settings: "Settings",
+    audit: "Audit",
+  };
+
+  function renderActiveTab() {
+    switch (tab) {
+      case "overview":
+        return renderOverview();
+      case "control":
+        return isAdmin ? renderControl() : renderOverview();
+      case "orders":
+        return renderOrders();
+      case "new":
+        return renderNewOrder();
+      case "menu":
+        return renderMenu();
+      case "employees":
+        return isAdmin ? renderEmployees() : renderOverview();
+      case "financials":
+        return canManage ? renderFinancials() : renderOverview();
+      case "documents":
+        return role !== "CUSTOMER" ? renderDocuments() : renderOverview();
+      case "settings":
+        return renderSettings();
+      case "audit":
+        return renderAudit();
+      default:
+        return renderOverview();
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#DCE6DA] px-4 py-6 text-[#2E3033] sm:px-8">
@@ -1750,8 +1925,10 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
             />
             <div className="hidden h-10 w-px bg-[#c3cec0] sm:block" />
             <div className="hidden sm:block">
-              <p className="font-display text-lg font-bold">POS &amp; Admin</p>
-              <p className="text-xs text-[#6f7a74]">Live Supabase · {data.schema}</p>
+              <p className="font-display text-lg font-bold">
+                {masterMode ? "Omnipotent Admin" : "POS & Admin"}
+              </p>
+              <p className="text-xs text-[#6f7a74]">Live {data.schema} · {data.roleLabels[role]}</p>
             </div>
           </div>
 
@@ -1774,6 +1951,11 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
                 Driver view
               </Link>
             ) : null}
+            {isAdmin ? (
+              <Link href="/admin" className={secondary}>
+                Master Admin
+              </Link>
+            ) : null}
             <ActionButton variant="secondary" onClick={handleSignOut} disabled={busy}>
               Sign out
             </ActionButton>
@@ -1792,9 +1974,7 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
                   : "text-[#6f7a74] hover:bg-[#e4ece1]"
               }`}
             >
-              {item === "new"
-                ? "New order"
-                : item.charAt(0).toUpperCase() + item.slice(1)}
+              {TAB_LABELS[item]}
             </button>
           ))}
         </nav>
@@ -1818,17 +1998,7 @@ export default function PosDashboard({ initialData }: PosDashboardProps) {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
           >
-            {tab === "overview"
-              ? renderOverview()
-              : tab === "orders"
-                ? renderOrders()
-                : tab === "new"
-                  ? renderNewOrder()
-                  : tab === "menu"
-                    ? renderMenu()
-                    : tab === "settings"
-                      ? renderSettings()
-                      : renderAudit()}
+            {renderActiveTab()}
           </motion.div>
         </AnimatePresence>
 

@@ -6,6 +6,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOutAction } from "@/app/actions/auth";
 import { getDashboardDataAction } from "@/app/actions/pos";
+import TrackingMap from "@/components/tracking/TrackingMap";
+import { notify } from "@/lib/ui/toast";
 import type { DashboardData, DashboardOrder } from "@/lib/pos/dashboard-types";
 import type { DecimalValue, OrderStatus } from "@/lib/pos/types";
 
@@ -176,6 +178,10 @@ export default function CustomerOrders({ initialData }: { initialData: Dashboard
 
   const isStaff = data.actor.role !== "CUSTOMER";
   const canDriver = data.actor.role === "DRIVER" || data.actor.role === "ADMIN";
+  const activeOrder =
+    data.orders.find(
+      (order) => order.status !== "DELIVERED" && order.status !== "CLOSED",
+    ) ?? data.orders[0];
 
   async function refresh() {
     setBusy(true);
@@ -184,8 +190,11 @@ export default function CustomerOrders({ initialData }: { initialData: Dashboard
     if (result.ok) {
       setData(result.data);
       setMessage("Orders refreshed.");
+      notify.success("Tracking updated", "Latest order statuses loaded.");
     } else {
-      setMessage(`[${result.code}] ${result.error}`);
+      const failure = `[${result.code}] ${result.error}`;
+      setMessage(failure);
+      notify.error("Refresh failed", failure);
     }
     setBusy(false);
     router.refresh();
@@ -196,7 +205,9 @@ export default function CustomerOrders({ initialData }: { initialData: Dashboard
     const result = await signOutAction();
     setBusy(false);
     if (!result.ok) {
-      setMessage(`[${result.code}] ${result.error}`);
+      const failure = `[${result.code}] ${result.error}`;
+      setMessage(failure);
+      notify.error("Sign-out failed", failure);
       return;
     }
     router.push("/login");
@@ -251,6 +262,8 @@ export default function CustomerOrders({ initialData }: { initialData: Dashboard
             {message}
           </div>
         ) : null}
+
+        {activeOrder ? <TrackingMap order={activeOrder} /> : null}
 
         {data.orders.length === 0 ? (
           <section className={`${neu} p-8 text-center`}>
