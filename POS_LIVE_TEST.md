@@ -449,3 +449,15 @@ The customer flow was redesigned around Supabase Auth phone OTP and optional ema
 ### Production SMS provider
 
 A real SMS provider (Twilio / MessageBird / Vonage / Textlocal) must be configured in the Supabase Auth dashboard with credentials. The credentials are intentionally not stored in the repository or Vercel. Without them, live `signInWithOtp` returns an SMS-provider error and the UI shows a clear message rather than inventing a code.
+
+### Live deployment verification
+
+- PR: `https://github.com/infoceyteq-maker/macrobox/pull/6`
+- Production commit: `38ae22d76a4f6d5aab9b1b562d674fbebc9688b0`
+- Vercel deployment: `dpl_DE74vfDqKGwXi3VKgEkUfzRuG2jv` — `READY / PROMOTED`
+- Live `/` shows only customer links (`Sign in / Register`, `My Profile`, `Track my orders`, `Cart`); no Admin/Staff/POS/Driver links.
+- Live `/customer/login` shows the passwordless phone OTP form and no internal system links.
+- Live `/profile` correctly redirects unauthenticated visitors to `/customer/login?next=/profile`.
+- Live `/api/auth-health` returns `ok:true` for the Admin API and isolated-schema RPC.
+
+Live SMS OTP delivery still requires production SMS-provider credentials in Supabase Auth.

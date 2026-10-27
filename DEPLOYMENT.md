@@ -22,10 +22,10 @@ The public catalog, cart, customer authentication, customer profile, and staff a
 
 ## Deployment record
 
-- GitHub PRs: [#1](https://github.com/infoceyteq-maker/macrobox/pull/1), [#2](https://github.com/infoceyteq-maker/macrobox/pull/2), [#3](https://github.com/infoceyteq-maker/macrobox/pull/3), and [#4](https://github.com/infoceyteq-maker/macrobox/pull/4) (all merged into `main`).
-- Final production commit: `97aacb06f56a191d57f85024dccf529d40486043`.
+- GitHub PRs: [#1](https://github.com/infoceyteq-maker/macrobox/pull/1), [#2](https://github.com/infoceyteq-maker/macrobox/pull/2), [#3](https://github.com/infoceyteq-maker/macrobox/pull/3), [#4](https://github.com/infoceyteq-maker/macrobox/pull/4), [#5](https://github.com/infoceyteq-maker/macrobox/pull/5), and [#6](https://github.com/infoceyteq-maker/macrobox/pull/6) (all merged into `main`).
+- Final production commit: `38ae22d76a4f6d5aab9b1b562d674fbebc9688b0`.
 - Vercel project: `macrobox-pos-live` (`prj_LrbnqyK2AQIcVEc5CY1bEWnCplSH`).
-- Final production deployment: `dpl_394VK5YiK8MFnkqnbkxqZoQgk9jC`, state `READY`, promoted to the production alias.
+- Final production deployment: `dpl_DE74vfDqKGwXi3VKgEkUfzRuG2jv`, state `READY`, promoted to the production alias.
 - Non-secret runtime health check: `https://macrobox-pos-live.vercel.app/api/auth-health` — returns `ok:true`, `supabaseAdminApi:true`, `phoneLookupRpc:true`, `schema:"macrobox_pos"`, `mode:"supabase"`.
 
 ## Supabase Data API
