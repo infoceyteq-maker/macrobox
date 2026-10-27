@@ -35,6 +35,7 @@ import { loadDashboardData } from "@/lib/pos/dashboard";
 import { isLocalMode } from "@/lib/pos/config";
 import { requireLocalUserId } from "@/lib/pos/local-session";
 import {
+  localActivateTieredTransportRate,
   localAssignDriver,
   localClearTransportRate,
   localCreateCategory,
@@ -315,6 +316,21 @@ export async function setTransportRateAction(
       p_per_km_rate: parsed.perKmRate,
       p_free_distance_km: parsed.freeDistanceKm ?? null,
     });
+  });
+}
+
+/** Admin-only activation of the approved LKR distance-tiered transport rate. */
+export async function activateTieredTransportRateAction(): Promise<
+  ActionResult<DeliverySettingsRow>
+> {
+  return runAction(async () => {
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      return localActivateTieredTransportRate(userId);
+    }
+
+    const { supabase } = await requirePosSession();
+    return callRpc<DeliverySettingsRow>(supabase, "activate_tiered_transport_rate", {});
   });
 }
 

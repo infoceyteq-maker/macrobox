@@ -299,7 +299,7 @@ A full lifecycle was also run directly against the connected project through the
 
 A temporary test rate of `1.00/km` with `2.00 km` free was used only to exercise dynamic billing. The remote rate was reset to `null`; no business rate is stored.
 
-The Admin-only `macrobox_pos.clear_transport_rate()` RPC from migration `202610270004_pos_clear_transport_rate.sql` was also applied and verified remotely: an Admin can set and then clear a test rate, a Driver is blocked with `TRANSPORT_RATE_ADMIN_ONLY`, and the final remote `per_km_rate` is `null`.
+The Admin-only `macrobox_pos.clear_transport_rate()` RPC from migration `202610270004_pos_clear_transport_rate.sql` was also applied and verified remotely: an Admin can set and then clear a test rate, a Driver is blocked with `TRANSPORT_RATE_ADMIN_ONLY`, and the final remote `per_km_rate` was `null` at that time. This historical test was later superseded by the approved tiered rate in section 10.
 
 Migration `202610270005_public_menu_read.sql` was applied and verified remotely: `macrobox_pos.products` and `macrobox_pos.categories` now expose `public_menu_read_*` policies to `anon`, scoped to `is_active = true`. The existing `app_users_admin_write` policy remains in place for Admin employee updates.
 
@@ -307,7 +307,7 @@ Migration `202610270005_public_menu_read.sql` was applied and verified remotely:
 
 ## 8. Important caveats
 
-- No real prices, nutrition values, addresses, salary values, or health claims were invented. `0.00` product prices are placeholders.
+- No real meal prices, nutrition values, addresses, salary values, or health claims were invented. `0.00` product prices are placeholders. The approved LKR distance-tiered transport rate was supplied by the business and is configured.
 - The supplied logo lockup is used unchanged.
 - The exact contact line and promotional copy rules from the original brief still apply to social/marketing assets; the POS UI does not add new health claims.
 - Demo accounts are verification-only.
@@ -363,3 +363,54 @@ Final promoted deployment `dpl_BjLYNWa1BQU4uC1E51NsMTJYbUov` from commit `e88cfb
 - Cache-busted `/` rendered the full Monday–Friday catalog with no menu-sync error.
 - `/customer/register` rendered the email + phone registration form.
 - `/admin` redirected to `/admin/login?next=/admin`.
+
+---
+
+## 10. Approved LKR tiered transport billing
+
+Migration `202610270009_tiered_transport_rate.sql` replaced the flat-rate formula in both the local PGlite engine and the live `macrobox_pos` schema. The exact approved rule is:
+
+```text
+0–3 km inclusive: LKR 150
+>3–4 km inclusive: LKR 270  (base 150 + 120 for the 4th km)
+>4–5 km inclusive: LKR 370  (270 + 100 for the 5th km)
+>5 km:             LKR 370 + (distance − 5) × 60
+```
+
+Verified boundary outputs in TypeScript, local PGlite SQL, and live Supabase SQL:
+
+| Distance | Transport |
+| --- | --- |
+| 0 km | 150.00 |
+| 3 km | 150.00 |
+| 3.01 km | 270.00 |
+| 4 km | 270.00 |
+| 4.01 km | 370.00 |
+| 5 km | 370.00 |
+| 5.5 km | 400.00 |
+| 6 km | 430.00 |
+| 10 km | 670.00 |
+
+The Admin UI now activates this exact tiered configuration with `activateTieredTransportRateAction()`. The legacy flat-rate setter remains available only for explicit maintenance and switches `rate_model` to `FLAT`. Clearing the rate sets `is_configured = false` without altering historical orders.
+
+Meal prices remain `0.00` placeholders because no approved product prices were supplied. No meal price was invented.
+
+## 11. Production Driver and Front Desk accounts
+
+Two pre-provisioned staff accounts were created in Supabase Auth and promoted in `macrobox_pos.app_users`:
+
+- `driver@macrobox.com` — `DRIVER`, `ACTIVE`
+- `frontdesk@macrobox.com` — `FRONT_DESK`, `ACTIVE`
+
+Both email/password sign-ins returned HTTP 200 against the live GoTrue `/token` endpoint. Their one-time passwords are delivered only in the deployment handoff and are not committed to the repository.
+
+### Tiered billing browser E2E
+
+A local Puppeteer pass on the rebuilt production preview verified:
+
+1. Admin sign-in and navigation to `/admin`.
+2. Overview shows `LKR distance-tiered`.
+3. Settings shows all four exact tiers and the active state.
+4. No browser console or page errors.
+
+The same preview runs the complete SQL lifecycle test; a 3 km delivery now records `transport_cost = 150.00` and requires `cashCollectedAmount = 150.00` when food subtotal is the current `0.00` test placeholder.

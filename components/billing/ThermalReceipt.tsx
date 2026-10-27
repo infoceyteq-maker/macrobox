@@ -1,6 +1,10 @@
 import { CONTACT_LINE } from "@/lib/brand";
 import { formatAmount, formatDate, shortId } from "@/components/ui/neu";
 import type { DashboardOrder } from "@/lib/pos/dashboard-types";
+import {
+  isTransportConfigured,
+  TRANSPORT_TIER_LABELS,
+} from "@/lib/pos/transport";
 import type { DecimalValue, DeliverySettingsRow } from "@/lib/pos/types";
 
 interface ThermalReceiptProps {
@@ -105,11 +109,13 @@ export default function ThermalReceipt({
               <span>{formatAmount(distanceKm)} km</span>
             </div>
           ) : null}
-          {settings?.per_km_rate != null ? (
-            <div className="thermal-row">
-              <span>Rate</span>
-              <span>{formatAmount(settings.per_km_rate)}/km · {formatAmount(settings.free_distance_km)} free</span>
-            </div>
+          {isTransportConfigured(settings) ? (
+            <>
+              <p className="thermal-center">LKR TIERED TRANSPORT</p>
+              {TRANSPORT_TIER_LABELS.map((label) => (
+                <p key={label}>{label}</p>
+              ))}
+            </>
           ) : (
             <p>Rate: not configured</p>
           )}

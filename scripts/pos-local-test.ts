@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   getLocalDb,
   LOCAL_DEMO_USERS,
+  localActivateTieredTransportRate,
   localAssignDriver,
   localCustomerSignIn,
   localClearTransportRate,
@@ -16,6 +17,10 @@ import {
   localSignIn,
   localTransition,
 } from "../lib/pos/local-db";
+import {
+  calculateTransportCost,
+  isTransportConfigured,
+} from "../lib/pos/transport";
 
 const ADMIN = LOCAL_DEMO_USERS.find((user) => user.role === "ADMIN")!;
 const DRIVER = LOCAL_DEMO_USERS.find((user) => user.role === "DRIVER")!;
@@ -40,8 +45,10 @@ async function main() {
   check("Five catalog products seeded", initial.products.length === 5);
   check("Six transition rules seeded", initial.transitions.length === 6);
   check(
-    "Transport rate starts unconfigured",
-    initial.settings.per_km_rate === null,
+    "Approved LKR tiered transport model is active",
+    initial.settings.rate_model === "TIERED_LKR" &&
+      initial.settings.is_configured === true &&
+      Number(initial.settings.per_km_rate) === 60,
   );
 
   const publicMenu = await localGetPublicMenu();
@@ -55,11 +62,59 @@ async function main() {
     publicMenu.products.every((product) => Number(product.basePrice) === 0),
   );
 
-  const settings = await localSetTransportRate(ADMIN.id, {
-    perKmRate: 1.0,
-    freeDistanceKm: 2.0,
-  });
-  check("Admin transport rate set", settings.per_km_rate !== null);
+  const tierCases: Array<[number, number]> = [
+    [0, 150],
+    [3, 150],
+    [3.01, 270],
+    [4, 270],
+    [4.01, 370],
+    [5, 370],
+    [5.5, 400],
+    [6, 430],
+    [10, 670],
+  ];
+  for (const [distance, expected] of tierCases) {
+    check(
+      `TypeScript tier ${distance} km -> LKR ${expected}`,
+      calculateTransportCost(distance) === expected,
+      String(calculateTransportCost(distance)),
+    );
+  }
+  check(
+    "Negative distance rejected by TypeScript calculator",
+    (() => {
+      try {
+        calculateTransportCost(-1);
+        return false;
+      } catch {
+        return true;
+      }
+    })(),
+  );
+
+  const db = await getLocalDb();
+  for (const [distance, expected] of tierCases) {
+    const result = await db.query<{ cost: number | string }>(
+      "select public.calculate_transport_cost($1) as cost",
+      [distance],
+    );
+    check(
+      `SQL tier ${distance} km -> LKR ${expected}`,
+      Number(result.rows[0]?.cost) === expected,
+      String(result.rows[0]?.cost),
+    );
+  }
+
+  const activated = await localActivateTieredTransportRate(ADMIN.id);
+  check(
+    "Admin activation keeps exact tier configuration",
+    activated.is_configured === true &&
+      activated.rate_model === "TIERED_LKR" &&
+      Number(activated.base_rate) === 150 &&
+      Number(activated.fourth_km_rate) === 120 &&
+      Number(activated.fifth_km_rate) === 100 &&
+      Number(activated.beyond_rate_per_km) === 60,
+  );
 
   const activeProduct = initial.products.find((product) => product.is_active);
   assert.ok(activeProduct, "No active product found");
@@ -110,16 +165,16 @@ async function main() {
       driverId: DRIVER.id,
       distanceKm: 3,
       signatureUrl: "local-test-signature",
-      cashCollectedAmount: 1,
+      cashCollectedAmount: 150,
     },
   });
   check("DISPATCHED -> DELIVERED", order.status === "DELIVERED");
   check(
-    "Dynamic transport cost calculated",
-    Number(order.transport_cost) === 1,
+    "Tier 1 transport cost calculated",
+    Number(order.transport_cost) === 150,
     String(order.transport_cost),
   );
-  check("Cash evidence recorded", Number(order.cash_collected_amount) === 1);
+  check("Cash evidence recorded", Number(order.cash_collected_amount) === 150);
   check("Signature evidence recorded", Boolean(order.delivery_signature_url));
 
   order = await localTransition(ADMIN.id, "CLOSED", {
@@ -157,9 +212,10 @@ async function main() {
 
   const persistedSettings = await localGetDeliverySettings();
   check(
-    "Transport settings persisted",
-    persistedSettings.per_km_rate !== null,
-    String(persistedSettings.per_km_rate),
+    "Tiered transport settings persisted",
+    isTransportConfigured(persistedSettings) &&
+      persistedSettings.rate_model === "TIERED_LKR",
+    `${persistedSettings.rate_model} / ${String(persistedSettings.per_km_rate)}`,
   );
 
   let clearBlocked = false;
@@ -172,9 +228,41 @@ async function main() {
   check("Driver blocked from clearing transport rate", clearBlocked);
 
   const cleared = await localClearTransportRate(ADMIN.id);
-  check("Admin cleared transport rate", cleared.per_km_rate === null);
+  check(
+    "Admin cleared transport rate",
+    cleared.per_km_rate === null && cleared.is_configured === false,
+  );
   const afterClear = await localGetDeliverySettings();
-  check("Cleared rate persisted", afterClear.per_km_rate === null);
+  check(
+    "Cleared rate persisted",
+    afterClear.per_km_rate === null && !isTransportConfigured(afterClear),
+  );
+
+  const legacyFlat = await localSetTransportRate(ADMIN.id, {
+    perKmRate: 10,
+    freeDistanceKm: 2,
+  });
+  check(
+    "Legacy flat-rate setter remains available",
+    legacyFlat.rate_model === "FLAT" && Number(legacyFlat.per_km_rate) === 10,
+  );
+  const flatCost = await db.query<{ cost: number | string }>(
+    "select public.calculate_transport_cost($1) as cost",
+    [5],
+  );
+  check(
+    "Legacy flat formula still computes correctly",
+    Number(flatCost.rows[0]?.cost) === 30,
+    String(flatCost.rows[0]?.cost),
+  );
+
+  const reactivated = await localActivateTieredTransportRate(ADMIN.id);
+  check(
+    "Admin reactivated approved tiered rate",
+    reactivated.rate_model === "TIERED_LKR" &&
+      reactivated.is_configured === true &&
+      calculateTransportCost(5) === 370,
+  );
 
   let employeeBlocked = false;
   try {
@@ -219,7 +307,6 @@ async function main() {
   const phoneSignIn = await localCustomerSignIn("+94 000 000 123", "LocalTest123!");
   check("Customer signs in with phone", phoneSignIn.userId === newCustomer.userId);
 
-  const db = await getLocalDb();
   const phoneLookup = await db.query<{ email: string | null }>(
     "select public.find_customer_signin_email($1) as email",
     ["+94000000123"],

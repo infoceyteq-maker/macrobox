@@ -80,8 +80,9 @@ The full implementation map is in `docs/FOLDER_STRUCTURE.md`. Key additions:
 - `/bill/[orderId]` — shareable digital e-bill with 80mm thermal print output.
 - Global `sonner` toasts for New Order Received, Order Accepted, Order Dispatched, Payment Settled, and other return messages.
 - `supabase/migrations/202610270005_public_menu_read.sql` — anonymous RLS read for active menu items only; no prices or private order data are exposed.
+- `supabase/migrations/202610270009_tiered_transport_rate.sql` — approved LKR distance-tiered transport billing and Admin activation RPC.
 
-Print rules are in `app/globals.css`: `@page { size: 80mm auto; margin: 0; }` plus black-and-white, shadow-free `.thermal-print` output. No real prices, rates, salaries, Google Maps key, or health claims were invented; `0.00` still means “price pending”.
+Print rules are in `app/globals.css`: `@page { size: 80mm auto; margin: 0; }` plus black-and-white, shadow-free `.thermal-print` output. The approved LKR distance-tiered transport rate is implemented in `lib/pos/transport.ts` and the authoritative SQL function; no real meal prices, salaries, Google Maps key, or health claims were invented. Product `0.00` still means “price pending” until the business supplies approved prices.
 
 ## Production authentication and routes
 

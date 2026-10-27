@@ -49,6 +49,8 @@ The pre-provisioned Master Admin email is `admin@macrobox.com`. Its one-time ini
 
 No Admin or staff self-registration page exists. Additional employees must be provisioned by the Master Admin through a controlled process.
 
+Production Driver and Front Desk accounts were provisioned out-of-band for lifecycle testing; their one-time passwords are delivered only in the deployment handoff, not committed to this repository. Rotate both after first login.
+
 ## Vercel environment variables
 
 Configured for production, preview, and development:
@@ -64,12 +66,12 @@ No `POS_DEMO_PASSWORD` or demo sign-in flag is configured in production. One-cli
 
 ## Database safety
 
-The deployment continues to use the isolated `macrobox_pos` schema on the connected Umbrellacafe Supabase project. The unrelated legacy `public.orders` rows are untouched. Product prices are still `0.00` placeholders and the transport rate remains unconfigured until the business supplies approved values.
+The deployment continues to use the isolated `macrobox_pos` schema on the connected Umbrellacafe Supabase project. The unrelated legacy `public.orders` rows are untouched. Product prices are still `0.00` placeholders and no meal price has been invented. The approved LKR distance-tiered transport rate is active: LKR 150 for 0–3 km, +120 for the 4th km, +100 for the 5th km, and +60 per km beyond 5 km.
 
 ## Post-deployment checklist
 
 1. Rotate the initial Master Admin password.
-2. Configure the approved product prices and transport rate in the Admin panel.
+2. Configure the approved product prices in the Admin panel; `0.00` still blocks real charging assumptions.
 3. Replace the simulated driver map with an approved map/GPS provider.
 4. Add verified salary/expense and nutrition data before publishing derived claims.
 5. Enable CAPTCHA and email/phone verification when a production mailer/SMS provider is available.

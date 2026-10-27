@@ -11,12 +11,13 @@ This document covers the backend architecture and the live Admin/POS UI built on
 | `supabase/migrations/202610270003_pos_ui_directory_rpcs.sql` | Read-only Driver/Customer directory RPCs used by the dashboard. |
 | `supabase/migrations/202610270004_pos_clear_transport_rate.sql` | Admin-only `clear_transport_rate()` RPC for returning billing to unconfigured; supports both `public` and `macrobox_pos` installs. |
 | `supabase/migrations/202610270005_public_menu_read.sql` | Anonymous RLS read for active categories/products only, enabling the public digital menu and cart. |
+| `supabase/migrations/202610270009_tiered_transport_rate.sql` | Approved LKR distance-tiered transport settings, authoritative calculator, and Admin activation RPC. |
 | `supabase/demo-seed.sql` | Optional verification seed: six role accounts, five weekday categories, and exact supplied catalog products with `0.00` price placeholders. |
 | `app/actions/pos.ts` | Next.js Server Actions for cart-to-order creation, lifecycle transitions, driver assignment, delivery, cash settlement, transport-rate config, and product visibility. |
 | `lib/pos/types.ts` | Shared TypeScript row types, enums, and `ActionResult<T>`. |
 | `lib/pos/schemas.ts` | Zod-validated Server Action inputs. |
 | `lib/pos/order-state-machine.ts` | Mirrors the normal RBAC transition matrix for server-side capability checks. The database remains authoritative. |
-| `lib/pos/transport.ts` | Pure estimator matching the SQL transport formula. |
+| `lib/pos/transport.ts` | Exact TypeScript mirror of the approved LKR tiered SQL transport formula. |
 | `lib/pos/env.ts`, `lib/pos/supabase-server.ts`, `lib/pos/errors.ts` | Lazy env validation, cookie-based Supabase server client, and normalized action errors. |
 | `.env.example` | Required public Supabase env vars and live-mode switch. |
 | `app/actions/auth.ts` | Supabase/local sign-in, one-click demo sign-in, and sign-out Server Actions. |
@@ -115,24 +116,34 @@ Every transition is locked with `SELECT ... FOR UPDATE`, supports `expectedStatu
 
 ## 4. Dynamic transport billing
 
-`delivery_settings` holds `free_distance_km` (default `2`) and a nullable `per_km_rate`. **No monetary rate is invented or seeded**; Admin configures it with `setTransportRateAction()` / `set_transport_rate()`.
+The approved production model is a distance-tiered LKR rate stored in `delivery_settings` and activated with `activateTieredTransportRateAction()` / `activate_tiered_transport_rate()`.
 
-SQL formula:
+Exact SQL/TypeScript formula:
 
 ```text
-if distance <= free_distance_km: cost = 0
-else: cost = round((distance - free_distance_km) * per_km_rate, 2)
+if distance <= 3 km:                         LKR 150
+else if distance <= 4 km:                    LKR 150 + 120 = 270
+else if distance <= 5 km:                    LKR 270 + 100 = 370
+else:                                        LKR 370 + (distance - 5) * 60
 ```
 
-Example with `distance = 5 km`, `free_distance_km = 2`, and a configured rate of `120`:
+Examples:
 
 ```text
-(5 - 2) * 120 = 360
+0 km  -> 150.00
+3 km  -> 150.00
+3.01 km -> 270.00
+4 km  -> 270.00
+4.01 km -> 370.00
+5 km  -> 370.00
+5.5 km -> 400.00
+6 km  -> 430.00
+10 km -> 670.00
 ```
 
 The authoritative `calculate_transport_cost()` runs inside `transition_order_status()` when the target is `DELIVERED`. That is the moment the Driver reaches the destination. `transport_cost` and `distance_km` are written then, and generated `final_total` updates automatically. `cashCollectedAmount` must equal `total_food_cost + transport_cost` within `0.01`.
 
-`lib/pos/transport.ts` mirrors the formula for server-side estimates only; it never writes to an order.
+`lib/pos/transport.ts` mirrors the exact tier steps for server-side/driver UI estimates only; it never writes to an order. The legacy `setTransportRateAction()` remains available for explicit flat-rate maintenance, but the production Admin UI activates the approved tiered model instead.
 
 ## 5. Driver assignment
 
@@ -162,8 +173,9 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
 | `assignDriverAction` | `assign_driver_to_order()` with optional immediate dispatch. |
 | `recordDeliveryAction` | Calculates/writes transport cost, e-signature, and cash; moves to `DELIVERED`. |
 | `settleOrderAction` | Records cash settlement reference; moves to `CLOSED`. |
-| `setTransportRateAction` | Admin-only `per_km_rate` / `free_distance_km` update. |
-| `clearTransportRateAction` | Admin-only `clear_transport_rate()` RPC; sets `per_km_rate` back to `null` without changing past orders. |
+| `activateTieredTransportRateAction` | Admin-only activation of the approved LKR distance-tiered transport config. |
+| `setTransportRateAction` | Legacy Admin-only flat-rate setter for explicit `FLAT` mode maintenance. |
+| `clearTransportRateAction` | Admin-only `clear_transport_rate()` RPC; disables new calculations without changing past orders. |
 | `updateEmployeeAction` | Admin-only `app_users` role/status/name/phone/salary JSON update; RLS is authoritative. |
 | `getPublicMenuAction` | Anonymous active-category/product read for the public digital menu and cart. |
 | `setProductVisibilityAction` | Admin-only `is_active` toggle. |
@@ -211,6 +223,7 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    psql "$DATABASE_URL" -f supabase/migrations/202610270005_public_menu_read.sql
    psql "$DATABASE_URL" -f supabase/migrations/202610270006_customer_auth.sql
    psql "$DATABASE_URL" -f supabase/migrations/202610270007_customer_phone_normalization.sql
+   psql "$DATABASE_URL" -f supabase/migrations/202610270009_tiered_transport_rate.sql
    ```
 
    On an existing project with conflicting `public.orders`, apply
@@ -219,8 +232,9 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    `202610270004_pos_clear_transport_rate.sql`,
    `202610270005_public_menu_read.sql`,
    `202610270006_customer_auth.sql`,
-   `202610270007_customer_phone_normalization.sql`, and
-   `202610270008_expose_pos_api_schema.sql` instead, then set
+   `202610270007_customer_phone_normalization.sql`,
+   `202610270008_expose_pos_api_schema.sql`, and
+   `202610270009_tiered_transport_rate.sql` instead, then set
    `NEXT_PUBLIC_SUPABASE_SCHEMA=macrobox_pos`. The last migration is
    Supabase-hosted PostgREST configuration and should not be run in PGlite.
 
@@ -232,16 +246,13 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    where email = 'replace-with-existing-account@example.com';
    ```
 
-4. Configure the transport rate once:
+4. Activate the approved LKR tiered transport rate once:
 
    ```ts
-   await setTransportRateAction({
-     perKmRate: 120,
-     freeDistanceKm: 2,
-   });
+   await activateTieredTransportRateAction();
    ```
 
-   The `120` above is only an illustrative value matching the formula example; it is not seeded by the migration. Admin can later call `clearTransportRateAction()` to return `per_km_rate` to `null` without changing historical orders.
+   Migration `202610270009_tiered_transport_rate.sql` stores the exact approved tiers and activates them. Admin can call `clearTransportRateAction()` to disable new transport calculations without changing historical orders, then reactivate the approved tiers at any time.
 
 5. Add categories/products with `createCategoryAction()` and `upsertProductAction()` using verified data. Toggle visibility with `setProductVisibilityAction()`.
 
@@ -260,12 +271,9 @@ await markOrderReadyAction({ orderId });
 await dispatchOrderAction({ orderId, driverId });
 
 // 4. Driver reaches destination: e-sign + distance + cash collected.
-// foodTotal, distanceKm, and perKmRate are read from the order/settings.
-const expectedCash = foodTotal + calculateTransportCost({
-  distanceKm,
-  perKmRate,
-  freeDistanceKm: 2,
-});
+// foodTotal and distanceKm are read from the order/settings; the approved
+// LKR tiers are applied identically in TypeScript and PostgreSQL.
+const expectedCash = foodTotal + calculateTransportCost(distanceKm);
 
 await recordDeliveryAction({
   orderId,
@@ -290,4 +298,4 @@ Admin can also call `transitionOrderStatusAction({ orderId, toStatus: "READY" })
 - A live Admin/POS UI, login, customer tracking page, focused Driver portal, drawn e-signature capture, Admin clear-rate control, COD cart, Omnipotent Master Admin dashboard, employee/financial views, simulated tracking, e-bills, thermal printing, and global toasts are now included; see `POS_LIVE_TEST.md` and `docs/FOLDER_STRUCTURE.md` for routes and verification.
 - No real prices, macros, ingredients, health claims, addresses, or salary values were invented. Seeded products use `0.00` as a “price pending” placeholder and preserve the supplied catalog copy verbatim.
 - The connected Supabase project was modified only inside the isolated `macrobox_pos` schema; the existing legacy `public.orders` table and its 7 rows were preserved.
-- Demo accounts and any temporary test transport rate are for verification only. The remote per-km rate was cleared back to `null` after testing.
+- Demo accounts are for verification only. The remote deployment now uses the approved LKR distance-tiered transport rate, not a temporary test rate. Product prices remain `0.00` placeholders until approved values are supplied.
