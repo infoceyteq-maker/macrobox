@@ -78,6 +78,7 @@ supabase/migrations/
   202610270005_public_menu_read.sql  # anon-active-menu RLS for public/macrobox_pos
   202610270006_customer_auth.sql     # phone-aware Auth profile trigger + lookup RPC
   202610270007_customer_phone_normalization.sql # digits-only E.164 phone matching
+  202610270008_expose_pos_api_schema.sql # Supabase PostgREST profile exposure
 ```
 
 ## Production routing

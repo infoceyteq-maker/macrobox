@@ -20,6 +20,20 @@ Canonical production origin: `https://macrobox-pos-live.vercel.app`
 
 The public catalog, cart, customer authentication, and staff authentication are separate route families. `proxy.ts` refreshes the Supabase session and reads the active `app_users.role` before permitting `/admin`, `/pos`, `/driver`, `/orders`, and `/bill`. Database RLS remains authoritative.
 
+## Deployment record
+
+- GitHub PR: `https://github.com/infoceyteq-maker/macrobox/pull/1` (merged into `main`).
+- Production commit: `b6261ac7042be489753f28babcefbcfcdeb0a215`.
+- Vercel project: `macrobox-pos-live` (`prj_LrbnqyK2AQIcVEc5CY1bEWnCplSH`).
+- Production deployment: `dpl_6bcXQ56vmTXF7UJ2xbDE69ZABhgw`, state `READY`, promoted to the production alias.
+- Non-secret runtime health check: `https://macrobox-pos-live.vercel.app/api/auth-health`.
+
+## Supabase Data API
+
+The POS tables remain in the isolated `macrobox_pos` schema. `202610270008_expose_pos_api_schema.sql` adds that schema to the Supabase-hosted PostgREST `pgrst.db_schemas` setting while preserving `public`, `storage`, and `graphql_public`, then reloads PostgREST config and schema cache. Without this exposure, the app returns `Invalid schema: macrobox_pos`; RLS and explicit grants still control access.
+
+`/api/auth-health` verifies from the Vercel runtime that the server-only service-role key can reach both the Supabase Auth Admin API and the isolated-schema phone-lookup RPC.
+
 ## Supabase Auth
 
 - Customers register with both an email address and an international phone number.

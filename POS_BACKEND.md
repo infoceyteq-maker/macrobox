@@ -218,9 +218,11 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
    `202610270003_pos_ui_directory_rpcs.sql`,
    `202610270004_pos_clear_transport_rate.sql`,
    `202610270005_public_menu_read.sql`,
-   `202610270006_customer_auth.sql`, and
-   `202610270007_customer_phone_normalization.sql` instead, then set
-   `NEXT_PUBLIC_SUPABASE_SCHEMA=macrobox_pos`.
+   `202610270006_customer_auth.sql`,
+   `202610270007_customer_phone_normalization.sql`, and
+   `202610270008_expose_pos_api_schema.sql` instead, then set
+   `NEXT_PUBLIC_SUPABASE_SCHEMA=macrobox_pos`. The last migration is
+   Supabase-hosted PostgREST configuration and should not be run in PGlite.
 
 3. Promote the first Admin through a controlled server-side/SQL process, for example:
 
