@@ -354,3 +354,12 @@ Live route checks passed after exposing `macrobox_pos` to Supabase PostgREST:
 - `/cart` remains public.
 
 `202610270008_expose_pos_api_schema.sql` records the Supabase-hosted PostgREST configuration that adds `macrobox_pos` to `pgrst.db_schemas` and reloads config/schema cache. `/api/auth-health` provides a non-secret runtime check of the service-role Admin API and isolated-schema RPC.
+
+### Final production health check
+
+Final promoted deployment `dpl_BjLYNWa1BQU4uC1E51NsMTJYbUov` from commit `e88cfb8f203f99706ae3ee619bbffac80fddbb12`:
+
+- `/api/auth-health` returned `{"ok":true,"supabaseAdminApi":true,"phoneLookupRpc":true,"schema":"macrobox_pos","mode":"supabase"}`.
+- Cache-busted `/` rendered the full Monday–Friday catalog with no menu-sync error.
+- `/customer/register` rendered the email + phone registration form.
+- `/admin` redirected to `/admin/login?next=/admin`.
