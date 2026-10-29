@@ -5,8 +5,10 @@ import {
   localActivateTieredTransportRate,
   localAssignDriver,
   localLinkCustomerEmail,
+  localSendEmailOtp,
   localSendPhoneOtp,
   localUpdateCustomerProfile,
+  localVerifyEmailOtp,
   localVerifyPhoneOtp,
   localClearTransportRate,
   localCreateCategory,
@@ -348,6 +350,45 @@ async function main() {
     "Lead email stays unverified (not a profile sign-in email)",
     leadProfile.email === null,
   );
+
+  const emailOtpSend = await localSendEmailOtp("Email.Customer@MacroBox.local");
+  check("Local email OTP issued", emailOtpSend.otpSent && emailOtpSend.devOtp === "123456");
+
+  let invalidEmailOtpBlocked = false;
+  try {
+    await localVerifyEmailOtp("email.customer@macrobox.local", "000000");
+  } catch (error) {
+    invalidEmailOtpBlocked = error instanceof Error && /INVALID_OTP|invalid/i.test(error.message);
+  }
+  check("Invalid email OTP rejected", invalidEmailOtpBlocked);
+
+  const emailCustomer = await localVerifyEmailOtp(
+    "email.customer@macrobox.local",
+    emailOtpSend.devOtp,
+  );
+  const emailProfile = await localGetActor(emailCustomer.userId);
+  check(
+    "Email OTP creates customer profile",
+    emailProfile.role === "CUSTOMER" &&
+      emailProfile.email === "email.customer@macrobox.local",
+    emailProfile.email ?? "",
+  );
+
+  await localSendEmailOtp("email.customer@macrobox.local");
+  const emailReturning = await localVerifyEmailOtp(
+    "email.customer@macrobox.local",
+    "123456",
+  );
+  check("Returning email OTP reuses same customer", emailReturning.userId === emailCustomer.userId);
+
+  let staffEmailBlocked = false;
+  try {
+    await localSendEmailOtp("admin@macrobox.local");
+    await localVerifyEmailOtp("admin@macrobox.local", "123456");
+  } catch (error) {
+    staffEmailBlocked = error instanceof Error && /STAFF_EMAIL|staff/i.test(error.message);
+  }
+  check("Staff email blocked from customer email OTP", staffEmailBlocked);
 
   const phoneLookup = await db.query<{ email: string | null }>(
     "select public.find_customer_signin_email($1) as email",

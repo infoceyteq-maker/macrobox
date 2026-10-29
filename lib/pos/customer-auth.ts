@@ -102,6 +102,23 @@ export const emailLinkSchema = z.object({
   email: z.string().trim().toLowerCase().email("Enter a valid email address.").max(254),
 });
 
+/**
+ * Email OTP sign-in. Supabase email OTP length is project-configurable, so
+ * accept 6–8 digits (the pasted snippet hard-coded 6; the live project is
+ * configured for 8).
+ */
+export const emailOtpRequestSchema = z.object({
+  email: emailLinkSchema.shape.email,
+});
+
+export const emailOtpVerifySchema = z.object({
+  email: emailLinkSchema.shape.email,
+  token: z
+    .string()
+    .trim()
+    .regex(/^\d{6,8}$/, "Enter the code from your email."),
+});
+
 export const customerProfileSchema = z.object({
   name: z.string().trim().max(160).default(""),
   deliveryAddress: z.string().trim().max(2000).default(""),
@@ -113,6 +130,8 @@ export type PhoneOtpVerifyInput = z.infer<typeof phoneOtpVerifySchema>;
 export type LeadOtpRequestInput = z.infer<typeof leadOtpRequestSchema>;
 export type LeadOtpVerifyInput = z.infer<typeof leadOtpVerifySchema>;
 export type EmailLinkInput = z.infer<typeof emailLinkSchema>;
+export type EmailOtpRequestInput = z.infer<typeof emailOtpRequestSchema>;
+export type EmailOtpVerifyInput = z.infer<typeof emailOtpVerifySchema>;
 export type CustomerProfileInput = z.infer<typeof customerProfileSchema>;
 
 export interface CustomerAuthSuccess {
@@ -123,6 +142,13 @@ export interface CustomerAuthSuccess {
 
 export interface CustomerOtpSendResult {
   phone: string;
+  otpSent: boolean;
+  /** Present only in local PGlite preview mode. */
+  devOtp?: string;
+}
+
+export interface EmailOtpSendResult {
+  email: string;
   otpSent: boolean;
   /** Present only in local PGlite preview mode. */
   devOtp?: string;
