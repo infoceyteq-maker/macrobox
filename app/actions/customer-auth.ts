@@ -5,11 +5,14 @@ import { headers } from "next/headers";
 import { runAction } from "@/lib/pos/action-result";
 import { isLocalMode } from "@/lib/pos/config";
 import {
+  emailOtpRequestSchema,
+  emailOtpVerifySchema,
   leadOtpRequestSchema,
   leadOtpVerifySchema,
   safeNextPath,
   type CustomerAuthSuccess,
   type CustomerOtpSendResult,
+  type EmailOtpSendResult,
   type LeadProfileDetails,
 } from "@/lib/pos/customer-auth";
 import {
@@ -18,10 +21,13 @@ import {
 } from "@/lib/pos/customer-profile";
 import { PosActionError } from "@/lib/pos/errors";
 import {
+  localSendEmailOtp,
   localSendPhoneOtp,
+  localVerifyEmailOtp,
   localVerifyPhoneOtp,
 } from "@/lib/pos/local-db";
 import { setLocalSession } from "@/lib/pos/local-session";
+import { createSupabaseAdminClient } from "@/lib/pos/supabase-admin";
 import { createSupabaseServerClient } from "@/lib/pos/supabase-server";
 import type { ActionResult } from "@/lib/pos/types";
 
@@ -104,6 +110,115 @@ export async function linkCustomerGoogleAction(input: {
     }
 
     return { url: data.url };
+  });
+}
+
+async function requestOrigin(): Promise<string> {
+  const requestHeaders = await headers();
+  return (
+    requestHeaders.get("origin") ??
+    (requestHeaders.get("host") ? `https://${requestHeaders.get("host")}` : null) ??
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    ""
+  );
+}
+
+/**
+ * Alternative customer sign-in step 1: send an email OTP code. The same
+ * email also contains a magic link via /auth/callback; customers may use
+ * either. Creates the account on verification (shouldCreateUser).
+ */
+export async function sendCustomerEmailOtpAction(input: {
+  email: string;
+}): Promise<ActionResult<EmailOtpSendResult>> {
+  return runAction(async () => {
+    const { email } = emailOtpRequestSchema.parse(input);
+
+    if (isLocalMode()) {
+      return localSendEmailOtp(email);
+    }
+
+    const origin = await requestOrigin();
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: origin
+          ? `${origin}/auth/callback?next=${encodeURIComponent("/profile")}`
+          : undefined,
+        data: { signup_source: "customer_email_otp" },
+      },
+    });
+
+    if (error) {
+      throw new PosActionError(
+        "OTP_SEND_FAILED",
+        "We could not send the email code. Please check the address and try again.",
+      );
+    }
+    return { email, otpSent: true } satisfies EmailOtpSendResult;
+  });
+}
+
+/**
+ * Alternative customer sign-in step 2: verify the email OTP, create the
+ * session, and ensure a customer profile exists. Staff emails are rejected
+ * here so employee accounts can never enter through the customer surface.
+ */
+export async function verifyCustomerEmailOtpAction(input: {
+  email: string;
+  token: string;
+}): Promise<ActionResult<CustomerAuthSuccess>> {
+  return runAction(async () => {
+    const parsed = emailOtpVerifySchema.parse(input);
+
+    if (isLocalMode()) {
+      const user = await localVerifyEmailOtp(parsed.email, parsed.token);
+      await setLocalSession(user.userId);
+      revalidatePath("/", "layout");
+      return user;
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: parsed.email,
+      token: parsed.token,
+      type: "email",
+    });
+
+    if (error || !data.user) {
+      throw new PosActionError(
+        "INVALID_OTP",
+        "That verification code is invalid or has expired.",
+      );
+    }
+
+    await ensureCustomerProfileForUser(data.user);
+
+    // The auth trigger must never downgrade a staff role, so guard the
+    // customer surface explicitly instead of landing staff in My Profile.
+    const admin = createSupabaseAdminClient();
+    const { data: profile } = await admin
+      .from("app_users")
+      .select("role")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    if (profile && profile.role !== "CUSTOMER") {
+      await supabase.auth.signOut();
+      throw new PosActionError(
+        "STAFF_EMAIL",
+        "This email belongs to a staff account. Please use the employee sign-in instead.",
+      );
+    }
+
+    revalidatePath("/", "layout");
+
+    return {
+      userId: data.user.id,
+      email: data.user.email ?? parsed.email,
+      phone: data.user.phone ?? null,
+    } satisfies CustomerAuthSuccess;
   });
 }
 

@@ -218,6 +218,12 @@ async function initDb(): Promise<PGlite> {
       name text not null
     );
 
+    create table if not exists public.local_email_otps (
+      email text primary key,
+      otp text not null,
+      expires_at timestamptz not null default now()
+    );
+
     create table if not exists public.local_phone_otps (
       phone text primary key,
       otp text not null,
@@ -467,6 +473,86 @@ export async function localVerifyPhoneOtp(
 
   await db.query(`delete from public.local_phone_otps where phone = $1`, [phone]);
   return { userId, email, phone };
+}
+
+/** Local preview equivalent of Supabase email OTP send. */
+export async function localSendEmailOtp(
+  email: string,
+): Promise<{ email: string; otpSent: boolean; devOtp: string }> {
+  const db = await getLocalDb();
+  const normalized = email.trim().toLowerCase();
+  await db.query(
+    `insert into public.local_email_otps (email, otp, expires_at)
+     values ($1, $2, now() + interval '5 minutes')
+     on conflict (email) do update
+       set otp = excluded.otp,
+           expires_at = excluded.expires_at`,
+    [normalized, LOCAL_CUSTOMER_OTP],
+  );
+  return { email: normalized, otpSent: true, devOtp: LOCAL_CUSTOMER_OTP };
+}
+
+/** Local preview email OTP verification; creates the customer profile on first use. */
+export async function localVerifyEmailOtp(
+  email: string,
+  token: string,
+): Promise<CustomerAuthSuccess> {
+  const db = await getLocalDb();
+  const normalized = email.trim().toLowerCase();
+  const otpResult = await db.query<AnyRow>(
+    `select otp from public.local_email_otps
+      where email = $1 and expires_at > now()`,
+    [normalized],
+  );
+  if (!otpResult.rows[0] || otpResult.rows[0].otp !== token) {
+    throw new PosActionError(
+      "INVALID_OTP",
+      "That verification code is invalid or has expired.",
+    );
+  }
+
+  const userResult = await db.query<AnyRow>(
+    `select id, role, phone from public.app_users
+      where lower(coalesce(email, '')) = $1
+      limit 1`,
+    [normalized],
+  );
+
+  let userId: string;
+  let phone: string | null;
+
+  if (userResult.rows[0]) {
+    if (String(userResult.rows[0].role) !== "CUSTOMER") {
+      throw new PosActionError(
+        "STAFF_EMAIL",
+        "This email belongs to a staff account. Please use the employee sign-in instead.",
+      );
+    }
+    userId = String(userResult.rows[0].id);
+    phone = userResult.rows[0].phone ? String(userResult.rows[0].phone) : null;
+  } else {
+    userId = randomUUID();
+    const initialName = normalized.split("@")[0] || "MacroBox Customer";
+    await db.query(
+      `insert into auth.users (id, email, raw_user_meta_data)
+       values ($1, $2, $3::jsonb)`,
+      [
+        userId,
+        normalized,
+        JSON.stringify({ name: initialName, signup_source: "customer_email_otp" }),
+      ],
+    );
+    await db.query(
+      `update public.app_users
+          set role = 'CUSTOMER', status = 'ACTIVE', name = $2, email = $3, phone = null
+        where id = $1`,
+      [userId, initialName, normalized],
+    );
+    phone = null;
+  }
+
+  await db.query(`delete from public.local_email_otps where email = $1`, [normalized]);
+  return { userId, email: normalized, phone };
 }
 
 /** Local preview email-link equivalent: attach the email immediately. */

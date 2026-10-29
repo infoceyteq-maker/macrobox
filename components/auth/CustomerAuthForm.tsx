@@ -256,6 +256,16 @@ export default function CustomerAuthForm({
                 >
                   {isPending ? "Sending code…" : "Send verification code"}
                 </button>
+
+                <p className="text-center text-xs font-semibold text-[#5f7b64]">
+                  Prefer email?{" "}
+                  <Link
+                    href={`/customer/email-login?next=${encodeURIComponent(nextPath)}`}
+                    className="hover:underline"
+                  >
+                    Sign in with an email code
+                  </Link>
+                </p>
               </form>
             ) : phase === "verify" ? (
               <form onSubmit={verifyOtp} className="mt-6 space-y-4">
