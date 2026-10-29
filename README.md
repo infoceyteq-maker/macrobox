@@ -88,7 +88,8 @@ Print rules are in `app/globals.css`: `@page { size: 80mm auto; margin: 0; }` pl
 
 ## Production authentication and routes
 
-- Public customer menu: `/`; cart: `/cart`.
+- Public customer menu: `/`; cart: `/cart`. The homepage opens with a scrolling information banner, then a browser-local weekday “Today's Main Combo”, individual daily item cards, Online Order / Call actions, and an Explore Categories reveal for the weekday catalog plus Specials, Portions (like dates), and Sweets placeholders until approved items are published.
+- Customer navigation: the hamburger sidebar is available on mobile and desktop and contains the customer profile image/initials, email, My Profile, Settings (`/settings`), Help (`/help`), Loyalty Program Benefits (`/loyalty`), and Information (`/information`). Internal Admin/POS/Front Desk/Driver routes are not linked from the customer sidebar.
 - Customer registration: `/customer/register` (lead form — name, phone, optional email and delivery city — then SMS OTP; verification auto-creates the profile and continues to the menu). Returning customer sign-in: `/customer/login` (passwordless phone OTP; alternative email-code sign-in at `/customer/email-login`, quick name/phone OTP sign-in at `/customer/quick-login`, then one optional step to link an email (verified magic link) and/or a Google identity via Supabase `linkIdentity` — Google requires the Google provider and manual linking enabled in Supabase Auth; both are skippable, and the generic `/login` route remains employee-only). `/menu` redirects to `/`.
 - Customer profile: `/profile` (optional name, delivery address, notes, and email magic link).
 - Customer tracking: `/orders`; digital e-bill: `/bill/[orderId]`.

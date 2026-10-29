@@ -18,6 +18,8 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useCart } from "@/components/cart/cart-context";
+import { CUSTOMER_CONTACT } from "@/lib/brand";
+import { isPricePending } from "@/lib/pos/public-menu";
 
 export interface Meal {
   id: string;
@@ -619,9 +621,12 @@ export interface LunchCatalogProps {
 
 export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
   const menu = useMealMenu(mealUpdates);
-  const { addMeal, openCart, menuLoading } = useCart();
+  const { addMeal, openCart, menuLoading, productForMeal } = useCart();
   const [activeDayId, setActiveDayId] = useState(lunchMenu[0].id);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showExploreCategories, setShowExploreCategories] = useState(false);
+  const [todayMealId, setTodayMealId] = useState(lunchMenu[0].id);
+  const [todayIsWeekend, setTodayIsWeekend] = useState(false);
   const [scrollState, setScrollState] = useState<ScrollState>({
     canScrollLeft: false,
     canScrollRight: true,
@@ -638,6 +643,26 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
     () => menu.find((meal) => meal.id === selectedId) ?? null,
     [menu, selectedId],
   );
+
+  useEffect(() => {
+    const day = new Date().getDay();
+    const weekend = day === 0 || day === 6;
+    setTodayIsWeekend(weekend);
+    setTodayMealId(weekend ? lunchMenu[0].id : lunchMenu[day - 1].id);
+  }, []);
+
+  const todayMeal = useMemo(
+    () => menu.find((meal) => meal.id === todayMealId) ?? menu[0],
+    [menu, todayMealId],
+  );
+  const todayProduct = productForMeal(todayMeal);
+  const todayPriceLabel = menuLoading
+    ? "Menu syncing"
+    : !todayProduct
+      ? "Price pending"
+      : isPricePending(todayProduct.basePrice)
+        ? "Price pending"
+        : `LKR ${Number(todayProduct.basePrice).toFixed(2)}`;
 
   const sharedTransition: Transition = reduceMotion
     ? { duration: 0 }
@@ -806,6 +831,11 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
     if (event.target === event.currentTarget) closeMeal();
   };
 
+  const orderTodayCombo = useCallback(() => {
+    addMeal(todayMeal, 1);
+    openCart();
+  }, [addMeal, openCart, todayMeal]);
+
   return (
     <LayoutGroup id="macrobox-lunch-catalog">
       <main className="relative min-h-screen overflow-hidden bg-[#DCE6DA] px-4 py-6 selection:bg-[#8FBC8F]/30 sm:px-8 sm:py-10 lg:px-12 lg:py-12">
@@ -864,9 +894,266 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
             </p>
           </section>
 
+          <section aria-labelledby="today-main-combo-title" className="mt-10 sm:mt-14">
+            <div
+              className={cn(
+                "grid overflow-hidden rounded-[2rem] border border-white/80 bg-[#F7F6F2] lg:grid-cols-[1.02fr_0.98fr]",
+                RAISED_LARGE,
+              )}
+            >
+              <div className="relative min-h-[280px] lg:min-h-full">
+                <MealImage
+                  meal={todayMeal}
+                  layoutId={`today-meal-image-${todayMeal.id}`}
+                  transition={sharedTransition}
+                  sizes="(max-width: 1024px) 100vw, 50vw"
+                  className="h-full min-h-[280px] rounded-none lg:min-h-[430px]"
+                  priority
+                />
+                <span
+                  className={cn(
+                    "absolute left-4 top-4 rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-[#22301f]",
+                    ACCENT_SURFACE,
+                    RAISED_TINY,
+                  )}
+                >
+                  {todayIsWeekend ? "Next weekday combo" : "Today's Main Combo"}
+                </span>
+              </div>
+
+              <div className="p-5 sm:p-7 lg:p-8">
+                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#5f7f66]">
+                  {todayIsWeekend ? "Next available weekday" : "Available today"}
+                </p>
+                <h2
+                  id="today-main-combo-title"
+                  className="mt-3 font-display text-3xl font-bold leading-tight text-[#2C3E50] sm:text-4xl"
+                >
+                  {todayMeal.day} — {todayMeal.title}
+                </h2>
+                <p className="mt-2 text-sm font-semibold text-[#53675A]">
+                  {categoryName} · {todayPriceLabel}
+                </p>
+
+                <div className="mt-5 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+                  {[
+                    ["Protein", todayMeal.macros.protein],
+                    ["Carbs", todayMeal.macros.carbs],
+                    ["Fat", todayMeal.macros.fat],
+                    ["Calories", todayMeal.macros.calories],
+                  ].map(([label, value]) => (
+                    <div key={label} className={cn("rounded-2xl bg-[#DCE6DA] px-2 py-3", INSET_TINY)}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-[#6f7a74]">{label}</p>
+                      <p className="mt-1 font-display text-sm font-bold text-[#2C3E50]">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {todayMeal.ingredients.map((ingredient) => (
+                    <span
+                      key={`${ingredient.name}-${ingredient.amount}`}
+                      className={cn("rounded-full bg-[#DCE6DA] px-3 py-1.5 text-xs font-semibold", INSET_TINY)}
+                    >
+                      {ingredient.name} · {ingredient.amount}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={orderTodayCombo}
+                    className={cn(
+                      "rounded-2xl px-5 py-3 text-sm font-bold text-[#22301f]",
+                      ACCENT_SURFACE,
+                      RAISED_SMALL,
+                      PRESSED_ON_ACTIVE,
+                      FOCUS_RING,
+                    )}
+                  >
+                    Online Order
+                  </button>
+                  <a
+                    href={CUSTOMER_CONTACT.phoneHref}
+                    className={cn(
+                      "rounded-2xl bg-[#F7F6F2] px-5 py-3 text-sm font-bold text-[#3d4a42]",
+                      RAISED_SMALL,
+                      PRESSED_ON_ACTIVE,
+                      FOCUS_RING,
+                    )}
+                  >
+                    Call {CUSTOMER_CONTACT.phoneDisplay}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={(event) => openMeal(todayMeal.id, event.currentTarget)}
+                    className={cn(
+                      "rounded-2xl bg-[#F7F6F2] px-5 py-3 text-sm font-bold text-[#3d4a42]",
+                      RAISED_SMALL,
+                      PRESSED_ON_ACTIVE,
+                      FOCUS_RING,
+                    )}
+                  >
+                    View details
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section aria-labelledby="individual-daily-items-title" className="mt-12">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#5f7f66]">
+                  {todayMeal.day} selection
+                </p>
+                <h2 id="individual-daily-items-title" className="mt-2 font-display text-3xl font-bold text-[#2C3E50]">
+                  Individual Daily Items
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#51645B]">
+                  Each card shows one item from today&apos;s combo. Online Order adds today&apos;s full combo to
+                  your cart and opens checkout.
+                </p>
+              </div>
+              <span className={cn("rounded-full bg-[#DCE6DA] px-3 py-1.5 text-xs font-bold", RAISED_TINY)}>
+                {todayMeal.ingredients.length} items
+              </span>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {todayMeal.ingredients.map((ingredient, index) => (
+                <article
+                  key={`${todayMeal.id}-${ingredient.name}-${ingredient.amount}`}
+                  className={cn("overflow-hidden rounded-[1.5rem] border border-white/80 bg-[#F7F6F2]", RAISED_SMALL)}
+                >
+                  <MealImage
+                    meal={todayMeal}
+                    layoutId={`daily-item-image-${todayMeal.id}-${index}`}
+                    transition={sharedTransition}
+                    sizes="(max-width: 640px) 100vw, (max-width: 1280px) 33vw, 20vw"
+                    className="h-36 rounded-none"
+                  />
+                  <div className="p-4">
+                    <h3 className="font-display text-base font-bold leading-snug text-[#2C3E50]">{ingredient.name}</h3>
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-[#6f7a74]">
+                      {ingredient.amount} · {todayMeal.day}
+                    </p>
+                    <p className="mt-3 text-xs leading-5 text-[#6f7a74]">Included in today&apos;s main combo.</p>
+                    <button
+                      type="button"
+                      onClick={orderTodayCombo}
+                      className={cn(
+                        "mt-4 w-full rounded-xl px-3 py-2.5 text-xs font-bold text-[#22301f]",
+                        ACCENT_SURFACE,
+                        RAISED_TINY,
+                        PRESSED_ON_ACTIVE,
+                        FOCUS_RING,
+                      )}
+                    >
+                      Online Order
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section aria-label="Order actions" className="mt-10 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={orderTodayCombo}
+              className={cn(
+                "rounded-[1.5rem] px-5 py-4 text-left text-[#22301f]",
+                ACCENT_SURFACE,
+                RAISED_SMALL,
+                PRESSED_ON_ACTIVE,
+                FOCUS_RING,
+              )}
+            >
+              <span className="block font-display text-lg font-bold">Online Order</span>
+              <span className="mt-1 block text-sm">Add today&apos;s combo to cart and continue to checkout.</span>
+            </button>
+            <a
+              href={CUSTOMER_CONTACT.phoneHref}
+              className={cn(
+                "rounded-[1.5rem] bg-[#F7F6F2] px-5 py-4 text-left text-[#3d4a42]",
+                RAISED_SMALL,
+                PRESSED_ON_ACTIVE,
+                FOCUS_RING,
+              )}
+            >
+              <span className="block font-display text-lg font-bold">Call</span>
+              <span className="mt-1 block text-sm">Order by phone: {CUSTOMER_CONTACT.phoneDisplay}</span>
+            </a>
+          </section>
+
+          <div className="mt-12">
+            <button
+              type="button"
+              onClick={() => setShowExploreCategories((current) => !current)}
+              aria-expanded={showExploreCategories}
+              aria-controls="explore-categories-panel"
+              className={cn(
+                "flex w-full items-center justify-between gap-4 rounded-[1.5rem] border border-white/80 bg-[#F7F6F2] px-5 py-4 text-left",
+                RAISED_SMALL,
+                PRESSED_ON_ACTIVE,
+                FOCUS_RING,
+              )}
+            >
+              <span>
+                <span className="block font-display text-lg font-bold text-[#2C3E50]">Explore Categories</span>
+                <span className="mt-1 block text-sm text-[#51645B]">
+                  Reveal Healthy Meals, Specials, Portions, and Sweets.
+                </span>
+              </span>
+              <span className={cn("rounded-full px-3 py-1.5 text-xs font-bold", ACCENT_SURFACE)}>
+                {showExploreCategories ? "Hide" : "Explore"}
+              </span>
+            </button>
+
+            {showExploreCategories ? (
+              <div id="explore-categories-panel" className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  {
+                    name: "Healthy Meals",
+                    description: "The Monday–Friday Lunch (Rice & Curry) catalog below.",
+                    status: `${menu.length} weekday meals`,
+                  },
+                  {
+                    name: "Specials",
+                    description: "Approved specials will appear here when published.",
+                    status: "No items published yet",
+                  },
+                  {
+                    name: "Portions (like dates)",
+                    description: "Standalone portion items will appear here when published.",
+                    status: "No items published yet",
+                  },
+                  {
+                    name: "Sweets",
+                    description: "Sweet items will appear here when published.",
+                    status: "No items published yet",
+                  },
+                ].map((category) => (
+                  <article
+                    key={category.name}
+                    className={cn("rounded-[1.5rem] border border-white/80 bg-[#F7F6F2] p-4", RAISED_SMALL)}
+                  >
+                    <h3 className="font-display text-base font-bold text-[#2C3E50]">{category.name}</h3>
+                    <p className="mt-2 min-h-10 text-sm leading-6 text-[#51645B]">{category.description}</p>
+                    <p className={cn("mt-3 inline-flex rounded-full px-3 py-1 text-[11px] font-bold", ACCENT_SOFT_SURFACE)}>
+                      {category.status}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
           <nav
             aria-label="Weekday meals"
-            className="mt-7 flex flex-wrap gap-2.5"
+            className={cn("mt-7 flex flex-wrap gap-2.5", !showExploreCategories && "hidden")}
           >
             {menu.map((meal) => {
               const isActive = activeDayId === meal.id;
@@ -902,7 +1189,11 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
             ref={scrollerRef}
             layoutScroll
             onScroll={updateScrollState}
-            className="-mx-4 mt-6 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 pt-3 pb-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:-mx-8 sm:px-8 lg:mx-0 lg:grid lg:grid-cols-3 lg:gap-6 lg:overflow-visible lg:px-0 lg:pb-4 xl:grid-cols-5"
+            className={
+              showExploreCategories
+                ? "-mx-4 mt-6 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 pt-3 pb-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:-mx-8 sm:px-8 lg:mx-0 lg:grid lg:grid-cols-3 lg:gap-6 lg:overflow-visible lg:px-0 lg:pb-4 xl:grid-cols-5"
+                : "hidden"
+            }
           >
             {menu.map((meal, index) => (
               <motion.article
@@ -1069,7 +1360,12 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
             ))}
           </motion.div>
 
-          <div className="mt-1 flex items-center justify-between gap-4 lg:hidden">
+          <div
+            className={cn(
+              "mt-1 flex items-center justify-between gap-4 lg:hidden",
+              !showExploreCategories && "hidden",
+            )}
+          >
             <p className="text-[10px] font-semibold tracking-[0.16em] text-[#53675A] uppercase">
               Swipe to explore
             </p>

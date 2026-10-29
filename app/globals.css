@@ -22,6 +22,29 @@ body {
   color: var(--macrobox-charcoal);
 }
 
+@keyframes macrobox-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.macrobox-marquee-track {
+  animation: macrobox-marquee 30s linear infinite;
+}
+
+.macrobox-marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .macrobox-marquee-track {
+    animation: none;
+  }
+}
+
 /* Shared Soft UI primitives used across customer, admin, billing, and driver UI. */
 .mb-soft-card {
   border-radius: 1.75rem;
