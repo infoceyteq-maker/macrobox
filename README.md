@@ -89,7 +89,7 @@ Print rules are in `app/globals.css`: `@page { size: 80mm auto; margin: 0; }` pl
 ## Production authentication and routes
 
 - Public customer menu: `/`; cart: `/cart`.
-- Customer registration: `/customer/register` (lead form — name, phone, optional email and delivery city — then SMS OTP; verification auto-creates the profile and continues to the menu). Returning customer sign-in: `/customer/login` (passwordless phone OTP only). `/menu` redirects to `/`.
+- Customer registration: `/customer/register` (lead form — name, phone, optional email and delivery city — then SMS OTP; verification auto-creates the profile and continues to the menu). Returning customer sign-in: `/customer/login` (passwordless phone OTP, then an optional step to link a Google identity via Supabase `linkIdentity` — requires the Google provider and manual linking enabled in Supabase Auth; skippable, and the generic `/login` route remains employee-only). `/menu` redirects to `/`.
 - Customer profile: `/profile` (optional name, delivery address, notes, and email magic link).
 - Customer tracking: `/orders`; digital e-bill: `/bill/[orderId]`.
 - Master Admin login: `/admin/login` (no self-registration); panel: `/admin`.
