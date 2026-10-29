@@ -74,6 +74,34 @@ async function main() {
     "Public menu keeps price-pending placeholders",
     publicMenu.products.every((product) => Number(product.basePrice) === 0),
   );
+  check(
+    "Every public menu product has a generated product image",
+    publicMenu.products.every((product) => product.imageUrl?.startsWith("/images/products/")),
+    `${publicMenu.products.filter((product) => product.imageUrl).length} mapped products`,
+  );
+  check(
+    "Weekday combo products use their weekday combo images",
+    ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].every((day) =>
+      publicMenu.products.some(
+        (product) =>
+          product.dayAssignment === day &&
+          product.ingredients.length > 1 &&
+          product.imageUrl?.includes(day.toLowerCase()),
+      ),
+    ),
+  );
+  check(
+    "Individual daily items do not reuse the combo image",
+    publicMenu.products
+      .filter((product) => product.ingredients.length === 1)
+      .every(
+        (product) =>
+          product.imageUrl &&
+          !/(monday-rice-curry-combo|tuesday-healthy-bowl|wednesday-specialty-plate|thursday-lean-meal|friday-recovery-bowl)\.jpg$/.test(
+            product.imageUrl,
+          ),
+      ),
+  );
 
   const tierCases: Array<[number, number]> = [
     [0, 150],

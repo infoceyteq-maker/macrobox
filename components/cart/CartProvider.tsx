@@ -13,6 +13,7 @@ import CartDrawer from "@/components/cart/CartDrawer";
 import { cn, NEU } from "@/components/ui/neu";
 import { notify } from "@/lib/ui/toast";
 import { isPricePending, type PublicMenuData, type PublicMenuProduct } from "@/lib/pos/public-menu";
+import { productImageForTitle, publicProductImage } from "@/lib/pos/product-images";
 
 const STORAGE_KEY = "macrobox_cart_v1";
 
@@ -172,7 +173,7 @@ export default function CartProvider({ children }: { children: ReactNode }) {
             mealId: meal.id,
             day: meal.day,
             title: meal.title,
-            image: meal.imagePlaceholder,
+            image: publicProductImage(product) ?? meal.imagePlaceholder,
             productId: product.id,
             unitPrice,
             quantity: Math.min(99, Math.max(1, quantity)),
@@ -210,7 +211,10 @@ export default function CartProvider({ children }: { children: ReactNode }) {
             mealId: lineId,
             day: meal.day,
             title: `${ingredient.name} · ${ingredient.amount}`,
-            image: meal.imagePlaceholder,
+            image:
+              publicProductImage(product) ??
+              productImageForTitle(ingredient.name, meal.day) ??
+              meal.imagePlaceholder,
             productId: product.id,
             unitPrice,
             quantity: Math.min(99, Math.max(1, quantity)),

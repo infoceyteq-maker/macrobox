@@ -20,6 +20,10 @@ import {
 import { useCart } from "@/components/cart/cart-context";
 import { CUSTOMER_CONTACT } from "@/lib/brand";
 import { isPricePending, type PublicMenuProduct } from "@/lib/pos/public-menu";
+import {
+  productImageForTitle,
+  publicProductImage,
+} from "@/lib/pos/product-images";
 
 export interface Meal {
   id: string;
@@ -44,7 +48,7 @@ export const lunchMenu: Meal[] = [
     id: "mon",
     day: "Monday",
     title: "MacroBox - Healthy Foods",
-    imagePlaceholder: "/images/monday-bowl.jpg",
+    imagePlaceholder: "/images/products/monday-rice-curry-combo.jpg",
     ingredients: [
       { name: "Basmathi rice", amount: "100g" },
       { name: "Dhal curry", amount: "75g" },
@@ -63,7 +67,7 @@ export const lunchMenu: Meal[] = [
     id: "tue",
     day: "Tuesday",
     title: "MacroBox - Healthy Foods",
-    imagePlaceholder: "/images/tuesday-bowl.jpg",
+    imagePlaceholder: "/images/products/tuesday-healthy-bowl.jpg",
     ingredients: [
       { name: "Basmathi rice", amount: "100g" },
       { name: "Roasted chickpeas", amount: "75g" },
@@ -82,7 +86,7 @@ export const lunchMenu: Meal[] = [
     id: "wed",
     day: "Wednesday",
     title: "MacroBox - Healthy Foods",
-    imagePlaceholder: "/images/wednesday-bowl.jpg",
+    imagePlaceholder: "/images/products/wednesday-specialty-plate.jpg",
     ingredients: [
       { name: "Basmathi rice", amount: "100g" },
       { name: "Black pepper chicken", amount: "100g" },
@@ -101,7 +105,7 @@ export const lunchMenu: Meal[] = [
     id: "thu",
     day: "Thursday",
     title: "MacroBox - Healthy Foods",
-    imagePlaceholder: "/images/thursday-bowl.jpg",
+    imagePlaceholder: "/images/products/thursday-lean-meal.jpg",
     ingredients: [
       { name: "Basmathi rice", amount: "100g" },
       { name: "Chicken breast", amount: "100g" },
@@ -123,7 +127,7 @@ export const lunchMenu: Meal[] = [
     id: "fri",
     day: "Friday",
     title: "MacroBox - Healthy Foods",
-    imagePlaceholder: "/images/friday-bowl.jpg",
+    imagePlaceholder: "/images/products/friday-recovery-bowl.jpg",
     ingredients: [
       { name: "Basmathi rice", amount: "100g" },
       { name: "Boiled corn", amount: "75g" },
@@ -703,7 +707,7 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
         return {
           ...meal,
           title: product.title || meal.title,
-          imagePlaceholder: product.imageUrl ?? meal.imagePlaceholder,
+          imagePlaceholder: publicProductImage(product) ?? meal.imagePlaceholder,
           ingredients: productIngredients(product) ?? meal.ingredients,
           macros: {
             protein: macroString(product, "protein", meal.macros.protein),
@@ -783,7 +787,10 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
         product,
         imageMeal: {
           ...todayMeal,
-          imagePlaceholder: product?.imageUrl ?? todayMeal.imagePlaceholder,
+          imagePlaceholder:
+            (product ? publicProductImage(product) : null) ??
+            productImageForTitle(ingredient.name, todayMeal.day) ??
+            todayMeal.imagePlaceholder,
         },
         priceLabel: publicProductPriceLabel(product),
         categoryLabel: product?.productCategory ?? "Daily item",
@@ -809,7 +816,7 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
         imageMeal: {
           ...todayMeal,
           id: product.id,
-          imagePlaceholder: product.imageUrl ?? todayMeal.imagePlaceholder,
+          imagePlaceholder: publicProductImage(product) ?? todayMeal.imagePlaceholder,
         },
         priceLabel: publicProductPriceLabel(product),
         categoryLabel: product.productCategory ?? (everyday ? "Everyday" : "Daily item"),
@@ -1068,7 +1075,7 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
             id: item.product.id,
             day: item.product.categoryName,
             title: item.product.title,
-            imagePlaceholder: item.product.imageUrl ?? todayMeal.imagePlaceholder,
+            imagePlaceholder: publicProductImage(item.product) ?? todayMeal.imagePlaceholder,
           },
           1,
         );
@@ -1085,7 +1092,7 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
           id: product.id,
           day: product.categoryName,
           title: product.title,
-          imagePlaceholder: product.imageUrl ?? todayMeal.imagePlaceholder,
+          imagePlaceholder: publicProductImage(product) ?? todayMeal.imagePlaceholder,
         },
         1,
       );
@@ -1408,7 +1415,7 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
                                 ...todayMeal,
                                 id: product.id,
                                 title: product.title,
-                                imagePlaceholder: product.imageUrl ?? todayMeal.imagePlaceholder,
+                                imagePlaceholder: publicProductImage(product) ?? todayMeal.imagePlaceholder,
                               }}
                               layoutId={`admin-product-image-${product.id}`}
                               transition={sharedTransition}

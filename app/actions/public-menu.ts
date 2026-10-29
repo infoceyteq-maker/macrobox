@@ -10,6 +10,7 @@ import type {
   PublicMenuData,
   PublicMenuProduct,
 } from "@/lib/pos/public-menu";
+import { publicProductImage } from "@/lib/pos/product-images";
 import type { ActionResult } from "@/lib/pos/types";
 
 type ProductRow = {
@@ -84,7 +85,13 @@ export async function getPublicMenuAction(): Promise<ActionResult<PublicMenuData
         dayAssignment: row.day_assignment ?? category?.name ?? "Everyday",
         quantity: row.quantity ?? null,
         productCategory: row.product_category ?? null,
-        imageUrl: row.image_url ?? null,
+        imageUrl: publicProductImage({
+          title: row.title,
+          dayAssignment: row.day_assignment ?? category?.name,
+          categoryName: category?.name,
+          imageUrl: row.image_url,
+          ingredients: Array.isArray(row.ingredients) ? row.ingredients : [],
+        }),
         ingredients: Array.isArray(row.ingredients) ? (row.ingredients as PublicMenuProduct["ingredients"]) : [],
         macros:
           row.macros && typeof row.macros === "object" && !Array.isArray(row.macros)

@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CATALOG_SEED_MEALS } from "./catalog-seed";
+import {
+  comboImageForDay,
+  productImageForTitle,
+  publicProductImage,
+} from "./product-images";
 import type {
   CustomerAuthSuccess,
   CustomerProfileInput,
@@ -80,6 +85,10 @@ const PRODUCTS_MANAGEMENT_MIGRATION_PATH = path.join(
 const EXPENSES_MIGRATION_PATH = path.join(
   process.cwd(),
   "supabase/migrations/202610270014_expenses.sql",
+);
+const PRODUCT_IMAGES_MIGRATION_PATH = path.join(
+  process.cwd(),
+  "supabase/migrations/202610270015_product_images.sql",
 );
 
 const ROLE_LABELS: Record<AppRole, string> = {
@@ -226,6 +235,9 @@ async function initDb(): Promise<PGlite> {
   const expensesMigration = await fs.readFile(EXPENSES_MIGRATION_PATH, "utf8");
   await db.exec(expensesMigration);
 
+  const productImagesMigration = await fs.readFile(PRODUCT_IMAGES_MIGRATION_PATH, "utf8");
+  await db.exec(productImagesMigration);
+
   await db.exec(`
     create table if not exists public.local_auth_users (
       id uuid primary key references auth.users(id) on delete cascade,
@@ -314,8 +326,8 @@ async function seedCatalog(db: PGlite): Promise<void> {
 
     await db.query(
       `insert into public.products
-         (title, category_id, day_assignment, product_category, ingredients, macros, base_price, cost_price, retail_price, is_active)
-       select $1, $2, $5, 'Healthy Meals', $3::jsonb, $4::jsonb, 0.00, 0.00, 0.00, true
+         (title, category_id, day_assignment, product_category, ingredients, macros, base_price, cost_price, retail_price, image_url, is_active)
+       select $1, $2, $5, 'Healthy Meals', $3::jsonb, $4::jsonb, 0.00, 0.00, 0.00, $6, true
        where not exists (
          select 1 from public.products
          where category_id = $2 and title = $1
@@ -326,6 +338,7 @@ async function seedCatalog(db: PGlite): Promise<void> {
         JSON.stringify(meal.ingredients),
         JSON.stringify(meal.macros),
         meal.day,
+        comboImageForDay(meal.day),
       ],
     );
 
@@ -335,13 +348,20 @@ async function seedCatalog(db: PGlite): Promise<void> {
     for (const ingredient of meal.ingredients) {
       await db.query(
         `insert into public.products
-           (title, category_id, day_assignment, quantity, ingredients, macros, base_price, cost_price, retail_price, is_active)
-         select $1, $2, $4, $5, $3::jsonb, '{}'::jsonb, 0.00, 0.00, 0.00, true
+           (title, category_id, day_assignment, quantity, ingredients, macros, base_price, cost_price, retail_price, image_url, is_active)
+         select $1, $2, $4, $5, $3::jsonb, '{}'::jsonb, 0.00, 0.00, 0.00, $6, true
          where not exists (
            select 1 from public.products
            where category_id = $2 and title = $1
          )`,
-        [ingredient.name, categoryId, JSON.stringify([ingredient]), meal.day, ingredient.amount],
+        [
+          ingredient.name,
+          categoryId,
+          JSON.stringify([ingredient]),
+          meal.day,
+          ingredient.amount,
+          productImageForTitle(ingredient.name, meal.day),
+        ],
       );
     }
   }
@@ -785,7 +805,13 @@ export async function localGetPublicMenu(): Promise<PublicMenuData> {
       dayAssignment: row.day_assignment ?? row.category_name,
       quantity: row.quantity ?? null,
       productCategory: row.product_category ?? null,
-      imageUrl: row.image_url ?? null,
+      imageUrl: publicProductImage({
+        title: row.title,
+        dayAssignment: row.day_assignment ?? row.category_name,
+        categoryName: row.category_name,
+        imageUrl: row.image_url ?? null,
+        ingredients: Array.isArray(row.ingredients) ? row.ingredients : [],
+      }),
       ingredients: Array.isArray(row.ingredients) ? row.ingredients : [],
       macros:
         row.macros && typeof row.macros === "object" && !Array.isArray(row.macros)
