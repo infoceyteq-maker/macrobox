@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
+  linkCustomerGoogleAction,
   sendCustomerPhoneOtpAction,
   verifyCustomerPhoneOtpAction,
 } from "@/app/actions/customer-auth";
@@ -17,7 +18,31 @@ interface CustomerAuthFormProps {
 
 const inputClass = cn(NEU.input, "px-5 py-4");
 
-type Phase = "phone" | "verify";
+type Phase = "phone" | "verify" | "google";
+
+/** Inline Google "G" mark (no external hotlinked asset). */
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-6 w-6" aria-hidden="true">
+      <path
+        fill="#FFC107"
+        d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.3 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"
+      />
+      <path
+        fill="#FF3D00"
+        d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.3 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"
+      />
+      <path
+        fill="#4CAF50"
+        d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"
+      />
+      <path
+        fill="#1976D2"
+        d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z"
+      />
+    </svg>
+  );
+}
 
 export default function CustomerAuthForm({
   nextPath = "/profile",
@@ -66,16 +91,41 @@ export default function CustomerAuthForm({
         return;
       }
 
-      setMessage("Phone verified. Opening your profile…");
+      // Phone identity is confirmed and the profile exists. Offer the
+      // optional Google-linking step before continuing to the profile.
+      setMessage("Phone verified. You can optionally connect Google, or skip.");
       notify.success("Welcome to MacroBox", "Your phone number is verified.");
-      const target = nextPath.startsWith("/") ? nextPath : "/profile";
-      const profileTarget =
-        target === "/profile"
-          ? "/profile"
-          : `/profile?next=${encodeURIComponent(target)}`;
-      router.replace(profileTarget);
-      router.refresh();
+      setPhase("google");
     });
+  }
+
+  function destination() {
+    const target = nextPath.startsWith("/") ? nextPath : "/profile";
+    return target === "/profile"
+      ? "/profile"
+      : `/profile?next=${encodeURIComponent(target)}`;
+  }
+
+  function linkGoogle() {
+    setError(null);
+    setMessage(null);
+
+    startTransition(async () => {
+      const result = await linkCustomerGoogleAction({ next: destination() });
+      if (!result.ok) {
+        setError(result.error);
+        notify.error("Google linking unavailable", result.error);
+        return;
+      }
+      // Hand off to Google; /auth/callback completes the link and returns
+      // the customer to their profile with the session refreshed.
+      window.location.assign(result.data.url);
+    });
+  }
+
+  function skipGoogle() {
+    router.replace(destination());
+    router.refresh();
   }
 
   function changePhone() {
@@ -124,15 +174,23 @@ export default function CustomerAuthForm({
         <section className={cn(NEU.card, "p-6 sm:p-9")}>
           <div className="mx-auto max-w-xl">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#7CA982]">
-              Step {phase === "phone" ? "1" : "2"} of 2
+              {phase === "google"
+                ? "Optional step"
+                : `Step ${phase === "phone" ? "1" : "2"} of 2`}
             </p>
             <h2 className="mt-3 font-display text-2xl font-bold">
-              {phase === "phone" ? "Continue with your phone" : "Enter your SMS code"}
+              {phase === "phone"
+                ? "Continue with your phone"
+                : phase === "verify"
+                  ? "Enter your SMS code"
+                  : "Secure your account with Gmail"}
             </h2>
             <p className="mt-2 text-sm text-[#6f7a74]">
               {phase === "phone"
                 ? "We will send a one-time code. New customers are created automatically."
-                : `We sent a 6-digit code to ${phone}.`}
+                : phase === "verify"
+                  ? `We sent a 6-digit code to ${phone}.`
+                  : "Connect your Google account to this phone number for a faster sign-in next time. You can skip this and do it later."}
             </p>
 
             {phase === "phone" ? (
@@ -168,7 +226,7 @@ export default function CustomerAuthForm({
                   {isPending ? "Sending code…" : "Send verification code"}
                 </button>
               </form>
-            ) : (
+            ) : phase === "verify" ? (
               <form onSubmit={verifyOtp} className="mt-6 space-y-4">
                 <label className="block space-y-2 text-sm font-medium">
                   <span>6-digit code</span>
@@ -230,6 +288,46 @@ export default function CustomerAuthForm({
                   </button>
                 </div>
               </form>
+            ) : (
+              <div className="mt-6 space-y-4">
+                {message ? (
+                  <div className="rounded-2xl bg-[#e2eddf] px-4 py-3 text-sm text-[#3f6b45]">
+                    {message}
+                  </div>
+                ) : null}
+                {error ? (
+                  <div className="rounded-2xl bg-[#f7e2de] px-4 py-3 text-sm text-[#8a3b2f]" role="alert">
+                    {error}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={linkGoogle}
+                  disabled={isPending}
+                  className={cn(
+                    NEU.button,
+                    "flex w-full items-center justify-center gap-3 py-4 font-bold",
+                  )}
+                >
+                  <GoogleIcon />
+                  {isPending ? "Connecting…" : "Connect Automatically with Gmail"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={skipGoogle}
+                  disabled={isPending}
+                  className="w-full text-center text-sm font-bold text-[#5f7b64] transition-colors hover:text-[#2E3033] disabled:opacity-55"
+                >
+                  Skip &amp; Go to Profile
+                </button>
+
+                <p className="text-center text-xs leading-5 text-[#7b857f]">
+                  Linking Google is optional and never replaces your phone
+                  sign-in — you can always continue with the SMS code.
+                </p>
+              </div>
             )}
 
             <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs font-semibold text-[#5f7b64]">
