@@ -10,6 +10,7 @@ import type {
   AppUserRow,
   CategoryRow,
   DeliverySettingsRow,
+  ExpenseRow,
   OrderAuditEventRow,
   OrderStatusHistoryRow,
   OrderStatusTransitionRow,
@@ -59,6 +60,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     customersResult,
     ordersResult,
     productsResult,
+    expensesResult,
     categoriesResult,
     settingsResult,
     transitionsResult,
@@ -76,6 +78,16 @@ export async function loadDashboardData(): Promise<DashboardData> {
       .order("created_at", { ascending: false })
       .limit(50),
     supabase.from("products").select("*").order("title"),
+    // Expenses are Master Admin-only P&L records. They are not queried for
+    // staff/customer dashboard payloads; the expenses RLS policies also only
+    // permit ADMIN reads/writes as defense in depth.
+    actor.role === "ADMIN"
+      ? supabase
+          .from("expenses")
+          .select("*")
+          .order("expense_date", { ascending: false })
+          .limit(100)
+      : Promise.resolve({ data: [], error: null }),
     supabase.from("categories").select("*").order("sort_order"),
     supabase.from("delivery_settings").select("*").single(),
     supabase.from("order_status_transitions").select("*"),
@@ -94,6 +106,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
   assertNoError(usersResult.error, "Unable to load users.");
   assertNoError(ordersResult.error, "Unable to load orders.");
   assertNoError(productsResult.error, "Unable to load products.");
+  assertNoError(expensesResult.error, "Unable to load expenses.");
   assertNoError(categoriesResult.error, "Unable to load categories.");
   assertNoError(settingsResult.error, "Unable to load delivery settings.");
   assertNoError(transitionsResult.error, "Unable to load transition matrix.");
@@ -114,6 +127,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     customers,
     orders: (ordersResult.data ?? []) as unknown as DashboardOrder[],
     products: (productsResult.data ?? []) as ProductRow[],
+    expenses: (expensesResult.data ?? []) as unknown as ExpenseRow[],
     categories: (categoriesResult.data ?? []) as CategoryRow[],
     settings: settingsResult.data as DeliverySettingsRow,
     transitions: (transitionsResult.data ?? []) as OrderStatusTransitionRow[],

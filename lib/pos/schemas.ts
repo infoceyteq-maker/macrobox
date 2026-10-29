@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { APP_ROLES, EMPLOYEE_STATUSES, ORDER_STATUSES } from "./types";
+import {
+  APP_ROLES,
+  EMPLOYEE_STATUSES,
+  EXPENSE_CATEGORIES,
+  ORDER_STATUSES,
+} from "./types";
 
 const uuid = z.uuid();
 const orderStatus = z.enum(ORDER_STATUSES);
@@ -201,6 +206,27 @@ export const deleteProductSchema = z
   .strict();
 
 export type DeleteProductInput = z.infer<typeof deleteProductSchema>;
+
+export const createExpenseSchema = z
+  .object({
+    category: z.enum(EXPENSE_CATEGORIES),
+    supplier: z.string().trim().min(1).max(200),
+    amount: z.number().positive().max(999_999_999),
+    remark: z
+      .string()
+      .trim()
+      .max(2000)
+      .nullable()
+      .optional()
+      .transform((value) => (value === "" ? null : value)),
+    // The form does not ask Admin to type a date: the Server Action captures
+    // the current timestamp. This optional value exists for deterministic
+    // imports/tests and is still validated as an ISO datetime.
+    expenseDate: z.string().datetime({ offset: true }).optional(),
+  })
+  .strict();
+
+export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 
 export const updateEmployeeSchema = z
   .object({

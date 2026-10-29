@@ -3,6 +3,7 @@ import {
   getLocalDb,
   LOCAL_DEMO_USERS,
   localActivateTieredTransportRate,
+  localAddExpense,
   localAssignDriver,
   localLinkCustomerEmail,
   localSendEmailOtp,
@@ -31,6 +32,7 @@ import {
 
 const ADMIN = LOCAL_DEMO_USERS.find((user) => user.role === "ADMIN")!;
 const DRIVER = LOCAL_DEMO_USERS.find((user) => user.role === "DRIVER")!;
+const FRONT_DESK = LOCAL_DEMO_USERS.find((user) => user.role === "FRONT_DESK")!;
 const CUSTOMER = LOCAL_DEMO_USERS.find((user) => user.role === "CUSTOMER")!;
 
 function check(name: string, condition: boolean, detail = "") {
@@ -275,6 +277,59 @@ async function main() {
 
   const deletedProduct = await localDeleteProduct(ADMIN.id, { productId: managedProduct.id });
   check("Master Admin product deleted", deletedProduct.id === managedProduct.id);
+
+  const expense = await localAddExpense(ADMIN.id, {
+    category: "Meat",
+    supplier: "Local Test Butcher",
+    amount: 1250,
+    remark: "Purchased extra chicken for Wednesday",
+    expenseDate: "2026-10-29T08:30:00.000Z",
+  });
+  check(
+    "Master Admin expense recorded with audit fields",
+    expense.category === "Meat" &&
+      expense.supplier === "Local Test Butcher" &&
+      Number(expense.amount) === 1250 &&
+      expense.added_by === ADMIN.id,
+  );
+
+  const adminDashboardWithExpense = await localLoadDashboardData(ADMIN.id);
+  check(
+    "Master Admin dashboard loads expense log",
+    adminDashboardWithExpense.expenses.some((entry) => entry.id === expense.id),
+  );
+
+  const driverDashboard = await localLoadDashboardData(DRIVER.id);
+  check(
+    "Driver dashboard receives no expense rows",
+    driverDashboard.expenses.length === 0,
+  );
+
+  let driverExpenseBlocked = false;
+  try {
+    await localAddExpense(DRIVER.id, {
+      category: "Transport",
+      supplier: "Driver Should Not Add",
+      amount: 100,
+      remark: null,
+    });
+  } catch (error) {
+    driverExpenseBlocked = error instanceof Error && /FORBIDDEN|role/i.test(error.message);
+  }
+  check("Driver blocked from adding expenses", driverExpenseBlocked);
+
+  let frontDeskExpenseBlocked = false;
+  try {
+    await localAddExpense(FRONT_DESK.id, {
+      category: "Bills",
+      supplier: "Front Desk Should Not Add",
+      amount: 100,
+      remark: null,
+    });
+  } catch (error) {
+    frontDeskExpenseBlocked = error instanceof Error && /FORBIDDEN|role/i.test(error.message);
+  }
+  check("Front Desk blocked from adding expenses", frontDeskExpenseBlocked);
 
   const persistedSettings = await localGetDeliverySettings();
   check(

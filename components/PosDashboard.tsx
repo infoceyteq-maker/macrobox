@@ -1656,7 +1656,15 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
 
   function renderFinancials() {
     return (
-      <FinancialsPanel orders={data.orders} settings={data.settings} schema={data.schema} />
+      <FinancialsPanel
+        orders={data.orders}
+        settings={data.settings}
+        schema={data.schema}
+        expenses={data.expenses}
+        actorRole={role}
+        masterMode={masterMode}
+        onExpensesChanged={refreshData}
+      />
     );
   }
 
@@ -1833,6 +1841,9 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
     // to the Master Admin portal. Staff/POS keeps the operational Menu only.
     if (item === "products") return masterMode && isAdmin;
     if (item === "menu") return !masterMode;
+    // Finance is the main menu item; its Expenses sub-tab is rendered only
+    // for Master Admin (masterMode && ADMIN) inside FinancialsPanel, and the
+    // dashboard/action layers never send expense rows to other roles.
     if (item === "financials") return canManage;
     if (item === "documents") return role !== "CUSTOMER";
     return true;
@@ -1846,7 +1857,7 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
     new: "New order",
     menu: "Menu",
     employees: "Employees",
-    financials: "Financials",
+    financials: "Finance",
     documents: "Documents",
     settings: "Settings",
     audit: "Audit",

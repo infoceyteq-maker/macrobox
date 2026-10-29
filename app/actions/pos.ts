@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   assignDriverSchema,
   createCategorySchema,
+  createExpenseSchema,
   createOrderSchema,
   deleteProductSchema,
   dispatchOrderSchema,
@@ -16,6 +17,7 @@ import {
   upsertProductSchema,
   type AssignDriverInput,
   type CreateCategoryInput,
+  type CreateExpenseInput,
   type CreateOrderInput,
   type DeleteProductInput,
   type DispatchOrderInput,
@@ -41,6 +43,7 @@ import {
   localActivateTieredTransportRate,
   localAssignDriver,
   localClearTransportRate,
+  localAddExpense,
   localCreateCategory,
   localCreateOrder,
   localDeleteProduct,
@@ -57,6 +60,7 @@ import type {
   AppUserRow,
   CategoryRow,
   DeliverySettingsRow,
+  ExpenseRow,
   JsonObject,
   OrderRow,
   OrderStatus,
@@ -109,10 +113,11 @@ const PRODUCT_DAY_SORT: Record<string, number> = {
   Everyday: 6,
 };
 
-/** Products Management is Master Admin only, enforced server-side as well as in the UI. */
+/** Master Admin-only modules are enforced server-side as well as in the UI. */
 async function requireMasterAdmin(
   supabase: SupabaseClient,
   userId: string,
+  moduleName = "Products Management",
 ): Promise<void> {
   const { data, error } = await supabase
     .from("app_users")
@@ -124,7 +129,7 @@ async function requireMasterAdmin(
   if (!data || data.role !== "ADMIN") {
     throw new PosActionError(
       "FORBIDDEN",
-      "Products Management is restricted to Master Admin.",
+      `${moduleName} is restricted to Master Admin.`,
     );
   }
 }
@@ -687,6 +692,46 @@ export async function getCurrentActorAction(): Promise<ActionResult<AppUserRow>>
     }
 
     return data as AppUserRow;
+  });
+}
+
+/**
+ * Master Admin-only expense insert. This adapts the requested Supabase insert
+ * to MacroBox's architecture: the browser never uses a direct Supabase client
+ * or service key; the signed-in ADMIN is verified first, the current timestamp
+ * is captured on the server, and RLS also restricts the expenses table to
+ * ADMIN select/insert with added_by = auth.uid().
+ */
+export async function addExpenseAction(
+  input: CreateExpenseInput,
+): Promise<ActionResult<ExpenseRow>> {
+  return runAction(async () => {
+    const parsed = createExpenseSchema.parse(input);
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      return localAddExpense(userId, parsed);
+    }
+
+    const { supabase, user } = await requirePosSession();
+    await requireMasterAdmin(supabase, user.id, "Expenses");
+
+    const { data, error } = await supabase
+      .from("expenses")
+      .insert({
+        category: parsed.category,
+        supplier: parsed.supplier,
+        amount: parsed.amount,
+        remark: parsed.remark ?? null,
+        expense_date: parsed.expenseDate ?? new Date().toISOString(),
+        added_by: user.id,
+      })
+      .select()
+      .single();
+
+    if (error) throw normalizeDatabaseError(error);
+    if (!data) throw new PosActionError("EMPTY_RESULT", "Expense was not saved.");
+
+    return data as ExpenseRow;
   });
 }
 

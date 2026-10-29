@@ -3,6 +3,7 @@ import type {
   AppUserRow,
   CategoryRow,
   DeliverySettingsRow,
+  ExpenseRow,
   OrderAuditEventRow,
   OrderItemRow,
   OrderRow,
@@ -32,6 +33,7 @@ export interface DashboardData {
   customers: DirectoryUser[];
   orders: DashboardOrder[];
   products: ProductRow[];
+  expenses: ExpenseRow[];
   categories: CategoryRow[];
   settings: DeliverySettingsRow;
   transitions: OrderStatusTransitionRow[];
