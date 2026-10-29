@@ -111,6 +111,11 @@ export default function CartProvider({ children }: { children: ReactNode }) {
       for (const categoryKey of categoryKeys) {
         const comboKey = `${categoryKey}:combo:${titleKey}`;
         if (!mealMap.has(comboKey)) mealMap.set(comboKey, product);
+        // A combo is the multi-ingredient product in a weekday category. This
+        // fallback keeps ordering working if Admin renames the combo title.
+        if (product.ingredients.length !== 1 && !mealMap.has(`${categoryKey}:combo`)) {
+          mealMap.set(`${categoryKey}:combo`, product);
+        }
         const ingredientKey = `${categoryKey}:ingredient:${titleKey}`;
         if (!ingredientMap.has(ingredientKey)) ingredientMap.set(ingredientKey, product);
       }
@@ -126,6 +131,7 @@ export default function CartProvider({ children }: { children: ReactNode }) {
       const titleKey = meal.title.trim().toLowerCase();
       return (
         productForMealIndex.get(`${dayKey}:combo:${titleKey}`) ??
+        productForMealIndex.get(`${dayKey}:combo`) ??
         productForMealIndex.get(meal.id.trim().toLowerCase()) ??
         null
       );

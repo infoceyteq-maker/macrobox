@@ -19,14 +19,21 @@ import {
 } from "react";
 import { useCart } from "@/components/cart/cart-context";
 import { CUSTOMER_CONTACT } from "@/lib/brand";
-import { isPricePending } from "@/lib/pos/public-menu";
+import { isPricePending, type PublicMenuProduct } from "@/lib/pos/public-menu";
 
 export interface Meal {
   id: string;
   day: string;
   title: string;
   ingredients: { name: string; amount: string }[];
-  macros: { protein: string; carbs: string; fat: string; calories: string };
+  macros: {
+    protein: string;
+    carbs: string;
+    fat: string;
+    calories: string;
+    vitamins?: string;
+    minerals?: string;
+  };
   imagePlaceholder: string;
 }
 
@@ -286,7 +293,7 @@ const ACCENT_TEXT = "text-[#7CA982]";
 const ACCENT_ACTIVE_BUTTON =
   "border-[#8FBC8F]/70 bg-[#8FBC8F] text-[#2C3E50] shadow-[inset_4px_4px_9px_#B4C3B0,inset_-4px_-4px_9px_#F8FBF4]";
 
-type MacroKey = keyof Meal["macros"];
+type MacroKey = "protein" | "carbs" | "fat" | "calories";
 
 const macroDetails: ReadonlyArray<{ key: MacroKey; label: string }> = [
   { key: "protein", label: "Protein" },
@@ -608,6 +615,59 @@ function MealImage({
   );
 }
 
+function productIngredients(product: PublicMenuProduct): Meal["ingredients"] | null {
+  if (!Array.isArray(product.ingredients)) return null;
+  const ingredients = product.ingredients.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name : "";
+    const amount =
+      typeof record.amount === "string"
+        ? record.amount
+        : typeof record.amount === "number"
+          ? String(record.amount)
+          : "";
+    return name ? [{ name, amount }] : [];
+  });
+  return ingredients.length > 0 ? ingredients : null;
+}
+
+function macroString(
+  product: PublicMenuProduct,
+  key: keyof Meal["macros"],
+  fallback: string,
+): string {
+  const value = product.macros?.[key];
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number") return String(value);
+  return fallback;
+}
+
+function publicProductPriceLabel(product: PublicMenuProduct | null): string {
+  if (!product) return "Price pending";
+  return isPricePending(product.basePrice)
+    ? "Price pending"
+    : `LKR ${Number(product.basePrice).toFixed(2)}`;
+}
+
+function exploreGroupFor(product: PublicMenuProduct): string {
+  const category = (product.productCategory ?? "").toLowerCase();
+  if (category.includes("sweet")) return "Sweets";
+  if (category.includes("portion") || category.includes("date")) return "Portions (like dates)";
+  if (category.includes("special")) return "Specials";
+  return "Healthy Meals";
+}
+
+interface DailyItemDisplay {
+  key: string;
+  name: string;
+  amount: string;
+  product: PublicMenuProduct | null;
+  imageMeal: Meal;
+  priceLabel: string;
+  categoryLabel: string;
+}
+
 interface ScrollState {
   canScrollLeft: boolean;
   canScrollRight: boolean;
@@ -620,8 +680,43 @@ export interface LunchCatalogProps {
 }
 
 export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
-  const menu = useMealMenu(mealUpdates);
-  const { addMeal, addIngredient, openCart, menuLoading, productForMeal, productForIngredient } = useCart();
+  const baseMenu = useMealMenu(mealUpdates);
+  const {
+    addMeal,
+    addIngredient,
+    openCart,
+    menuLoading,
+    menu: publicMenuData,
+    productForMeal,
+    productForIngredient,
+  } = useCart();
+
+  // Overlay Admin-managed product data (name, image, ingredients, nutrition,
+  // and retail price via the cart product lookup) onto the supplied weekday
+  // catalog. If Admin renames/edits a combo product, the customer UI follows
+  // after the public menu refreshes.
+  const menu = useMemo<Meal[]>(
+    () =>
+      baseMenu.map((meal) => {
+        const product = productForMeal(meal);
+        if (!product) return meal;
+        return {
+          ...meal,
+          title: product.title || meal.title,
+          imagePlaceholder: product.imageUrl ?? meal.imagePlaceholder,
+          ingredients: productIngredients(product) ?? meal.ingredients,
+          macros: {
+            protein: macroString(product, "protein", meal.macros.protein),
+            carbs: macroString(product, "carbs", meal.macros.carbs),
+            fat: macroString(product, "fat", meal.macros.fat),
+            calories: macroString(product, "calories", meal.macros.calories),
+            vitamins: macroString(product, "vitamins", meal.macros.vitamins ?? "") || undefined,
+            minerals: macroString(product, "minerals", meal.macros.minerals ?? "") || undefined,
+          },
+        };
+      }),
+    [baseMenu, productForMeal],
+  );
   const [activeDayId, setActiveDayId] = useState(lunchMenu[0].id);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showExploreCategories, setShowExploreCategories] = useState(false);
@@ -663,6 +758,119 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
       : isPricePending(todayProduct.basePrice)
         ? "Price pending"
         : `LKR ${Number(todayProduct.basePrice).toFixed(2)}`;
+
+  const dailyItems = useMemo<DailyItemDisplay[]>(() => {
+    const items: DailyItemDisplay[] = [];
+    const seen = new Set<string>();
+    const publicProducts = publicMenuData?.products ?? [];
+
+    const pushItem = (item: DailyItemDisplay) => {
+      const key = item.name.trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      items.push(item);
+    };
+
+    for (const ingredient of todayMeal.ingredients) {
+      const product = productForIngredient(todayMeal, ingredient);
+      // Once the public menu has loaded, hidden/deleted Admin products should
+      // disappear from the purchasable daily-item cards.
+      if (publicMenuData && !product) continue;
+      pushItem({
+        key: product?.id ?? `${todayMeal.id}-${ingredient.name}`,
+        name: product?.title ?? ingredient.name,
+        amount: product?.quantity ?? ingredient.amount,
+        product,
+        imageMeal: {
+          ...todayMeal,
+          imagePlaceholder: product?.imageUrl ?? todayMeal.imagePlaceholder,
+        },
+        priceLabel: publicProductPriceLabel(product),
+        categoryLabel: product?.productCategory ?? "Daily item",
+      });
+    }
+
+    for (const product of publicProducts) {
+      const assignedToday =
+        product.dayAssignment === todayMeal.day ||
+        product.categoryName === todayMeal.day ||
+        product.categorySlug === todayMeal.day.toLowerCase();
+      const everyday =
+        product.dayAssignment === "Everyday" || product.categorySlug === "everyday";
+      if (!assignedToday && !everyday) continue;
+      if (todayProduct && product.id === todayProduct.id) continue;
+
+      const firstIngredient = productIngredients(product)?.[0];
+      pushItem({
+        key: product.id,
+        name: product.title,
+        amount: product.quantity ?? firstIngredient?.amount ?? "—",
+        product,
+        imageMeal: {
+          ...todayMeal,
+          id: product.id,
+          imagePlaceholder: product.imageUrl ?? todayMeal.imagePlaceholder,
+        },
+        priceLabel: publicProductPriceLabel(product),
+        categoryLabel: product.productCategory ?? (everyday ? "Everyday" : "Daily item"),
+      });
+    }
+
+    return items;
+  }, [productForIngredient, publicMenuData, todayMeal, todayProduct]);
+
+  const exploreCategories = useMemo(() => {
+    const publicProducts = publicMenuData?.products ?? [];
+    const definitions = [
+      {
+        name: "Healthy Meals",
+        description: "The Monday–Friday Lunch (Rice & Curry) catalog below.",
+      },
+      {
+        name: "Specials",
+        description: "Admin-published specials appear here automatically.",
+      },
+      {
+        name: "Portions (like dates)",
+        description: "Admin-published standalone portions appear here automatically.",
+      },
+      {
+        name: "Sweets",
+        description: "Admin-published sweet items appear here automatically.",
+      },
+    ] as const;
+
+    return definitions.map((definition) => {
+      const products = publicProducts.filter(
+        (product) => exploreGroupFor(product) === definition.name,
+      );
+      return {
+        ...definition,
+        status: products.length > 0 ? `${products.length} item${products.length === 1 ? "" : "s"}` : "No items published yet",
+        examples: products.slice(0, 3).map((product) => product.title).join(" · "),
+      };
+    });
+  }, [publicMenuData]);
+
+  const adminManagedProducts = useMemo(() => {
+    const publicProducts = publicMenuData?.products ?? [];
+    const catalogNames = new Set(
+      baseMenu.flatMap((meal) => [
+        meal.title.trim().toLowerCase(),
+        ...meal.ingredients.map((ingredient) => ingredient.name.trim().toLowerCase()),
+      ]),
+    );
+
+    return publicProducts.filter((product) => {
+      const group = exploreGroupFor(product);
+      return (
+        product.dayAssignment === "Everyday" ||
+        product.categorySlug === "everyday" ||
+        group !== "Healthy Meals" ||
+        !catalogNames.has(product.title.trim().toLowerCase())
+      );
+    });
+  }, [baseMenu, publicMenuData]);
 
   const sharedTransition: Transition = reduceMotion
     ? { duration: 0 }
@@ -837,15 +1045,53 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
   }, [addMeal, openCart, todayMeal]);
 
   const orderIndividualItem = useCallback(
-    (ingredient: Meal["ingredients"][number]) => {
-      if (!productForIngredient(todayMeal, ingredient)) {
-        addIngredient(todayMeal, ingredient, 1);
+    (item: DailyItemDisplay) => {
+      if (!item.product) {
+        addIngredient(todayMeal, { name: item.name, amount: item.amount }, 1);
         return;
       }
-      addIngredient(todayMeal, ingredient, 1);
+
+      const ingredientProduct = productForIngredient(todayMeal, {
+        name: item.product.title,
+        amount: item.amount,
+      });
+
+      if (ingredientProduct?.id === item.product.id) {
+        addIngredient(
+          todayMeal,
+          { name: item.product.title, amount: item.amount },
+          1,
+        );
+      } else {
+        addMeal(
+          {
+            id: item.product.id,
+            day: item.product.categoryName,
+            title: item.product.title,
+            imagePlaceholder: item.product.imageUrl ?? todayMeal.imagePlaceholder,
+          },
+          1,
+        );
+      }
       openCart();
     },
-    [addIngredient, openCart, productForIngredient, todayMeal],
+    [addIngredient, addMeal, openCart, productForIngredient, todayMeal],
+  );
+
+  const orderPublicProduct = useCallback(
+    (product: PublicMenuProduct) => {
+      addMeal(
+        {
+          id: product.id,
+          day: product.categoryName,
+          title: product.title,
+          imagePlaceholder: product.imageUrl ?? todayMeal.imagePlaceholder,
+        },
+        1,
+      );
+      openCart();
+    },
+    [addMeal, openCart, todayMeal.imagePlaceholder],
   );
 
   return (
@@ -1029,34 +1275,34 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
                 </p>
               </div>
               <span className={cn("rounded-full bg-[#DCE6DA] px-3 py-1.5 text-xs font-bold", RAISED_TINY)}>
-                {todayMeal.ingredients.length} items
+                {dailyItems.length} items
               </span>
             </div>
 
             <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-              {todayMeal.ingredients.map((ingredient, index) => (
+              {dailyItems.map((item, index) => (
                 <article
-                  key={`${todayMeal.id}-${ingredient.name}-${ingredient.amount}`}
+                  key={item.key}
                   className={cn("overflow-hidden rounded-[1.5rem] border border-white/80 bg-[#F7F6F2]", RAISED_SMALL)}
                 >
                   <MealImage
-                    meal={todayMeal}
-                    layoutId={`daily-item-image-${todayMeal.id}-${index}`}
+                    meal={item.imageMeal}
+                    layoutId={`daily-item-image-${item.key}-${index}`}
                     transition={sharedTransition}
                     sizes="(max-width: 640px) 100vw, (max-width: 1280px) 33vw, 20vw"
                     className="h-36 rounded-none"
                   />
                   <div className="p-4">
-                    <h3 className="font-display text-base font-bold leading-snug text-[#2C3E50]">{ingredient.name}</h3>
+                    <h3 className="font-display text-base font-bold leading-snug text-[#2C3E50]">{item.name}</h3>
                     <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-[#6f7a74]">
-                      {ingredient.amount} · {todayMeal.day}
+                      {item.amount} · {item.categoryLabel}
                     </p>
                     <p className="mt-3 text-xs leading-5 text-[#6f7a74]">
-                      Available separately. Price pending until confirmed.
+                      Available separately. {item.priceLabel}.
                     </p>
                     <button
                       type="button"
-                      onClick={() => orderIndividualItem(ingredient)}
+                      onClick={() => orderIndividualItem(item)}
                       className={cn(
                         "mt-4 w-full rounded-xl px-3 py-2.5 text-xs font-bold text-[#22301f]",
                         ACCENT_SURFACE,
@@ -1127,41 +1373,77 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
             </button>
 
             {showExploreCategories ? (
-              <div id="explore-categories-panel" className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {[
-                  {
-                    name: "Healthy Meals",
-                    description: "The Monday–Friday Lunch (Rice & Curry) catalog below.",
-                    status: `${menu.length} weekday meals`,
-                  },
-                  {
-                    name: "Specials",
-                    description: "Approved specials will appear here when published.",
-                    status: "No items published yet",
-                  },
-                  {
-                    name: "Portions (like dates)",
-                    description: "Standalone portion items will appear here when published.",
-                    status: "No items published yet",
-                  },
-                  {
-                    name: "Sweets",
-                    description: "Sweet items will appear here when published.",
-                    status: "No items published yet",
-                  },
-                ].map((category) => (
-                  <article
-                    key={category.name}
-                    className={cn("rounded-[1.5rem] border border-white/80 bg-[#F7F6F2] p-4", RAISED_SMALL)}
-                  >
-                    <h3 className="font-display text-base font-bold text-[#2C3E50]">{category.name}</h3>
-                    <p className="mt-2 min-h-10 text-sm leading-6 text-[#51645B]">{category.description}</p>
-                    <p className={cn("mt-3 inline-flex rounded-full px-3 py-1 text-[11px] font-bold", ACCENT_SOFT_SURFACE)}>
-                      {category.status}
-                    </p>
-                  </article>
-                ))}
-              </div>
+              <>
+                <div id="explore-categories-panel" className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {exploreCategories.map((category) => (
+                    <article
+                      key={category.name}
+                      className={cn("rounded-[1.5rem] border border-white/80 bg-[#F7F6F2] p-4", RAISED_SMALL)}
+                    >
+                      <h3 className="font-display text-base font-bold text-[#2C3E50]">{category.name}</h3>
+                      <p className="mt-2 min-h-10 text-sm leading-6 text-[#51645B]">{category.description}</p>
+                      {category.examples ? (
+                        <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#6f7a74]">{category.examples}</p>
+                      ) : null}
+                      <p className={cn("mt-3 inline-flex rounded-full px-3 py-1 text-[11px] font-bold", ACCENT_SOFT_SURFACE)}>
+                        {category.status}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+
+                {adminManagedProducts.length > 0 ? (
+                  <div className="mt-6">
+                    <h3 className="font-display text-lg font-bold text-[#2C3E50]">More Products</h3>
+                    <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      {adminManagedProducts.map((product) => {
+                        const firstIngredient = productIngredients(product)?.[0];
+                        return (
+                          <article
+                            key={product.id}
+                            className={cn("overflow-hidden rounded-[1.5rem] border border-white/80 bg-[#F7F6F2]", RAISED_SMALL)}
+                          >
+                            <MealImage
+                              meal={{
+                                ...todayMeal,
+                                id: product.id,
+                                title: product.title,
+                                imagePlaceholder: product.imageUrl ?? todayMeal.imagePlaceholder,
+                              }}
+                              layoutId={`admin-product-image-${product.id}`}
+                              transition={sharedTransition}
+                              sizes="(max-width: 640px) 100vw, 25vw"
+                              className="h-32 rounded-none"
+                            />
+                            <div className="p-4">
+                              <h4 className="font-display text-base font-bold text-[#2C3E50]">{product.title}</h4>
+                              <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-[#6f7a74]">
+                                {product.dayAssignment} · {product.productCategory ?? exploreGroupFor(product)}
+                              </p>
+                              <p className="mt-2 text-xs text-[#6f7a74]">
+                                {product.quantity ?? firstIngredient?.amount ?? "Quantity not set"} · {publicProductPriceLabel(product)}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => orderPublicProduct(product)}
+                                className={cn(
+                                  "mt-4 w-full rounded-xl px-3 py-2.5 text-xs font-bold text-[#22301f]",
+                                  ACCENT_SURFACE,
+                                  RAISED_TINY,
+                                  PRESSED_ON_ACTIVE,
+                                  FOCUS_RING,
+                                )}
+                              >
+                                Online Order
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </div>
 
@@ -1642,6 +1924,22 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
                         </div>
                       ))}
                     </div>
+                    {selectedMeal.macros.vitamins || selectedMeal.macros.minerals ? (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {selectedMeal.macros.vitamins ? (
+                          <div className={cn("rounded-2xl bg-[#DCE6DA] px-4 py-3", INSET_TINY)}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#6f7a74]">Vitamins</p>
+                            <p className="mt-1 text-sm font-semibold">{selectedMeal.macros.vitamins}</p>
+                          </div>
+                        ) : null}
+                        {selectedMeal.macros.minerals ? (
+                          <div className={cn("rounded-2xl bg-[#DCE6DA] px-4 py-3", INSET_TINY)}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#6f7a74]">Minerals</p>
+                            <p className="mt-1 text-sm font-semibold">{selectedMeal.macros.minerals}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </section>
 
                   <div className="mt-8 flex flex-wrap gap-3">

@@ -5,6 +5,7 @@ import {
   assignDriverSchema,
   createCategorySchema,
   createOrderSchema,
+  deleteProductSchema,
   dispatchOrderSchema,
   recordDeliverySchema,
   setProductVisibilitySchema,
@@ -16,6 +17,7 @@ import {
   type AssignDriverInput,
   type CreateCategoryInput,
   type CreateOrderInput,
+  type DeleteProductInput,
   type DispatchOrderInput,
   type RecordDeliveryInput,
   type SetProductVisibilityInput,
@@ -31,6 +33,7 @@ import {
   toActionFailure,
 } from "@/lib/pos/errors";
 import { requirePosSession } from "@/lib/pos/supabase-server";
+import { createSupabaseAdminClient } from "@/lib/pos/supabase-admin";
 import { loadDashboardData } from "@/lib/pos/dashboard";
 import { isLocalMode } from "@/lib/pos/config";
 import { requireLocalUserId } from "@/lib/pos/local-session";
@@ -40,6 +43,7 @@ import {
   localClearTransportRate,
   localCreateCategory,
   localCreateOrder,
+  localDeleteProduct,
   localGetActor,
   localGetDeliverySettings,
   localSetProductVisibility,
@@ -94,6 +98,73 @@ async function runAction<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
   } catch (error) {
     return toActionFailure(error);
   }
+}
+
+const PRODUCT_DAY_SORT: Record<string, number> = {
+  Monday: 1,
+  Tuesday: 2,
+  Wednesday: 3,
+  Thursday: 4,
+  Friday: 5,
+  Everyday: 6,
+};
+
+/** Products Management is Master Admin only, enforced server-side as well as in the UI. */
+async function requireMasterAdmin(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("app_users")
+    .select("role")
+    .eq("id", userId)
+    .single();
+
+  if (error) throw normalizeDatabaseError(error);
+  if (!data || data.role !== "ADMIN") {
+    throw new PosActionError(
+      "FORBIDDEN",
+      "Products Management is restricted to Master Admin.",
+    );
+  }
+}
+
+async function resolveSupabaseProductCategoryId(
+  supabase: SupabaseClient,
+  parsed: UpsertProductInput,
+): Promise<string> {
+  if (parsed.dayAssignment) {
+    const slug = parsed.dayAssignment.toLowerCase();
+    const existing = await supabase
+      .from("categories")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
+
+    if (existing.error) throw normalizeDatabaseError(existing.error);
+    if (existing.data?.id) return existing.data.id as string;
+
+    const inserted = await supabase
+      .from("categories")
+      .insert({
+        name: parsed.dayAssignment,
+        slug,
+        description: parsed.dayAssignment === "Everyday" ? "Available every day" : null,
+        sort_order: PRODUCT_DAY_SORT[parsed.dayAssignment] ?? 99,
+        is_active: true,
+      })
+      .select("id")
+      .single();
+
+    if (inserted.error) throw normalizeDatabaseError(inserted.error);
+    if (!inserted.data?.id) {
+      throw new PosActionError("EMPTY_RESULT", "Product day category was not created.");
+    }
+    return inserted.data.id as string;
+  }
+
+  if (parsed.categoryId) return parsed.categoryId;
+  throw new PosActionError("VALIDATION_ERROR", "A product category/day assignment is required.");
 }
 
 async function performTransition(
@@ -402,8 +473,10 @@ export async function createCategoryAction(
 }
 
 /**
- * Admin-only product create/update. Ingredients and macros are stored as JSONB;
- * no menu copy, prices, or nutrition values are generated here.
+ * Master Admin-only product create/update. Ingredients and nutrition are
+ * stored as JSONB; base_price is kept equal to retail_price so existing order
+ * snapshots continue to use the customer-facing price. Cost price stays in
+ * the Admin data model and is never returned by the public menu action.
  */
 export async function upsertProductAction(
   input: UpsertProductInput,
@@ -415,26 +488,154 @@ export async function upsertProductAction(
       return localUpsertProduct(userId, parsed);
     }
 
-    const { supabase } = await requirePosSession();
+    const { supabase, user } = await requirePosSession();
+    await requireMasterAdmin(supabase, user.id);
+
+    const existingResult = parsed.id
+      ? await supabase.from("products").select("*").eq("id", parsed.id).maybeSingle()
+      : { data: null, error: null };
+    if (existingResult.error) throw normalizeDatabaseError(existingResult.error);
+    const existing = existingResult.data as ProductRow | null;
+    if (parsed.id && !existing) {
+      throw new PosActionError("PRODUCT_NOT_FOUND", "Product not found.");
+    }
+
+    const categoryId = await resolveSupabaseProductCategoryId(supabase, parsed);
+    const categoryResult = await supabase
+      .from("categories")
+      .select("name")
+      .eq("id", categoryId)
+      .single();
+    if (categoryResult.error) throw normalizeDatabaseError(categoryResult.error);
+
+    const categoryName = (categoryResult.data?.name as string | undefined) ?? "Everyday";
+    const retailPrice =
+      parsed.retailPrice ?? parsed.basePrice ?? existing?.retail_price ?? existing?.base_price ?? 0;
+    const suppliedIngredients = parsed.ingredients as ProductRow["ingredients"];
+    const payload = {
+      title: parsed.title,
+      category_id: categoryId,
+      day_assignment:
+        parsed.dayAssignment ??
+        existing?.day_assignment ??
+        (PRODUCT_DAY_SORT[categoryName] ? categoryName : "Everyday"),
+      quantity: parsed.quantity !== undefined ? parsed.quantity : (existing?.quantity ?? null),
+      product_category:
+        parsed.productCategory !== undefined
+          ? parsed.productCategory
+          : (existing?.product_category ?? null),
+      ingredients:
+        suppliedIngredients.length > 0
+          ? suppliedIngredients
+          : existing?.ingredients && parsed.id
+            ? existing.ingredients
+            : [{ name: parsed.title, amount: parsed.quantity ?? "" }],
+      macros: parsed.macros,
+      base_price: retailPrice,
+      cost_price: parsed.costPrice ?? existing?.cost_price ?? 0,
+      retail_price: retailPrice,
+      image_url: parsed.imageUrl !== undefined ? parsed.imageUrl : (existing?.image_url ?? null),
+      is_active: parsed.isActive,
+    };
+
+    const result = parsed.id
+      ? await supabase.from("products").update(payload).eq("id", parsed.id).select().single()
+      : await supabase.from("products").insert(payload).select().single();
+
+    if (result.error) throw normalizeDatabaseError(result.error);
+    if (!result.data) throw new PosActionError("EMPTY_RESULT", "Product was not saved.");
+
+    return result.data as ProductRow;
+  });
+}
+
+/** Master Admin-only hard delete. Historical order items keep their snapshots. */
+export async function deleteProductAction(
+  input: DeleteProductInput,
+): Promise<ActionResult<ProductRow>> {
+  return runAction(async () => {
+    const parsed = deleteProductSchema.parse(input);
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      return localDeleteProduct(userId, parsed);
+    }
+
+    const { supabase, user } = await requirePosSession();
+    await requireMasterAdmin(supabase, user.id);
 
     const { data, error } = await supabase
       .from("products")
-      .upsert({
-        ...(parsed.id ? { id: parsed.id } : {}),
-        title: parsed.title,
-        category_id: parsed.categoryId,
-        ingredients: parsed.ingredients,
-        macros: parsed.macros,
-        base_price: parsed.basePrice,
-        is_active: parsed.isActive,
-      })
+      .delete()
+      .eq("id", parsed.productId)
       .select()
       .single();
 
     if (error) throw normalizeDatabaseError(error);
-    if (!data) throw new PosActionError("EMPTY_RESULT", "Product was not saved.");
+    if (!data) throw new PosActionError("PRODUCT_NOT_FOUND", "Product not found.");
 
     return data as ProductRow;
+  });
+}
+
+const PRODUCT_IMAGE_TYPES: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+/**
+ * Master Admin product image upload. The browser never receives a service-role
+ * key: the signed-in user's ADMIN role is checked first, then the server-side
+ * client uploads to the public_assets bucket and returns the public URL.
+ */
+export async function uploadProductImageAction(
+  formData: FormData,
+): Promise<ActionResult<{ imageUrl: string }>> {
+  return runAction(async () => {
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
+      throw new PosActionError("VALIDATION_ERROR", "Choose an image file to upload.");
+    }
+
+    const extension = PRODUCT_IMAGE_TYPES[file.type];
+    if (!extension) {
+      throw new PosActionError("VALIDATION_ERROR", "Upload a JPG, PNG, WebP, or GIF image.");
+    }
+    if (file.size <= 0 || file.size > 5 * 1024 * 1024) {
+      throw new PosActionError("VALIDATION_ERROR", "Product images must be between 1 byte and 5 MB.");
+    }
+
+    if (isLocalMode()) {
+      const userId = await requireLocalUserId();
+      const actor = await localGetActor(userId);
+      if (actor.role !== "ADMIN") {
+        throw new PosActionError("FORBIDDEN", "Products Management is restricted to Master Admin.");
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        throw new PosActionError("VALIDATION_ERROR", "Local preview images must be 2 MB or smaller.");
+      }
+      const bytes = Buffer.from(await file.arrayBuffer());
+      return { imageUrl: `data:${file.type};base64,${bytes.toString("base64")}` };
+    }
+
+    const { supabase, user } = await requirePosSession();
+    await requireMasterAdmin(supabase, user.id);
+
+    const admin = createSupabaseAdminClient();
+    const filePath = `product_images/${crypto.randomUUID()}.${extension}`;
+    const { error: uploadError } = await admin.storage
+      .from("public_assets")
+      .upload(filePath, file, { contentType: file.type, upsert: false });
+
+    if (uploadError) throw normalizeDatabaseError(uploadError);
+
+    const { data } = admin.storage.from("public_assets").getPublicUrl(filePath);
+    if (!data.publicUrl) {
+      throw new PosActionError("EMPTY_RESULT", "The uploaded image URL was not returned.");
+    }
+
+    return { imageUrl: data.publicUrl };
   });
 }
 

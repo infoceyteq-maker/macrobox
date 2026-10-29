@@ -1,4 +1,4 @@
-import type { DecimalValue } from "./types";
+import type { DecimalValue, JsonObject, JsonValue } from "./types";
 
 /** Public, price-pending menu data used by the customer catalog and cart. */
 export interface PublicMenuCategory {
@@ -15,7 +15,14 @@ export interface PublicMenuProduct {
   categoryId: string;
   categoryName: string;
   categorySlug: string;
+  /** Customer-facing retail price. Cost price is Admin-only and never exposed here. */
   basePrice: DecimalValue;
+  dayAssignment: string;
+  quantity: string | null;
+  productCategory: string | null;
+  imageUrl: string | null;
+  ingredients: JsonValue[];
+  macros: JsonObject;
   isActive: boolean;
 }
 

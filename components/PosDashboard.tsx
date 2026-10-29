@@ -9,6 +9,7 @@ import SignaturePad from "@/components/SignaturePad";
 import MasterOrderControl from "@/components/admin/MasterOrderControl";
 import EmployeesPanel from "@/components/admin/EmployeesPanel";
 import FinancialsPanel from "@/components/admin/FinancialsPanel";
+import ProductsPanel from "@/components/admin/ProductsPanel";
 import OrderDocuments from "@/components/billing/OrderDocuments";
 import { notify } from "@/lib/ui/toast";
 import { signOutAction } from "@/app/actions/auth";
@@ -53,6 +54,7 @@ import {
 const TABS = [
   "overview",
   "control",
+  "products",
   "orders",
   "new",
   "menu",
@@ -1382,7 +1384,7 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
                         {JSON.stringify({ ingredients: product.ingredients, macros: product.macros }, null, 2)}
                       </pre>
                     </details>
-                    {isAdmin ? (
+                    {isAdmin && masterMode ? (
                       <div className="space-y-2 pt-2">
                         <form
                           onSubmit={(event) => {
@@ -1446,7 +1448,7 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
           )}
         </SectionCard>
 
-        {isAdmin ? (
+        {isAdmin && masterMode ? (
           <div className="grid gap-6 lg:grid-cols-2">
             <SectionCard title="Add category">
               <form onSubmit={submitCategory} className="space-y-4">
@@ -1827,6 +1829,10 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
   const visibleTabs = TABS.filter((item) => {
     if (item === "new") return canCreateOrder;
     if (item === "control" || item === "employees") return isAdmin;
+    // Products Management (cost price, images, add/edit/delete) is exclusive
+    // to the Master Admin portal. Staff/POS keeps the operational Menu only.
+    if (item === "products") return masterMode && isAdmin;
+    if (item === "menu") return !masterMode;
     if (item === "financials") return canManage;
     if (item === "documents") return role !== "CUSTOMER";
     return true;
@@ -1835,6 +1841,7 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
   const TAB_LABELS: Record<Tab, string> = {
     overview: "Overview",
     control: "Control",
+    products: "Products",
     orders: "Orders",
     new: "New order",
     menu: "Menu",
@@ -1851,6 +1858,17 @@ export default function PosDashboard({ initialData, masterMode = false }: PosDas
         return renderOverview();
       case "control":
         return isAdmin ? renderControl() : renderOverview();
+      case "products":
+        return masterMode && isAdmin ? (
+          <ProductsPanel
+            products={data.products}
+            categories={data.categories}
+            actorRole={role}
+            onChanged={refreshData}
+          />
+        ) : (
+          renderOverview()
+        );
       case "orders":
         return renderOrders();
       case "new":
