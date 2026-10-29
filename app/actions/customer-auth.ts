@@ -4,12 +4,16 @@ import { revalidatePath } from "next/cache";
 import { runAction } from "@/lib/pos/action-result";
 import { isLocalMode } from "@/lib/pos/config";
 import {
-  phoneOtpRequestSchema,
-  phoneOtpVerifySchema,
+  leadOtpRequestSchema,
+  leadOtpVerifySchema,
   type CustomerAuthSuccess,
   type CustomerOtpSendResult,
+  type LeadProfileDetails,
 } from "@/lib/pos/customer-auth";
-import { ensureCustomerProfileForUser } from "@/lib/pos/customer-profile";
+import {
+  applyCustomerLeadDetails,
+  ensureCustomerProfileForUser,
+} from "@/lib/pos/customer-profile";
 import { PosActionError } from "@/lib/pos/errors";
 import {
   localSendPhoneOtp,
@@ -35,32 +39,51 @@ function mapOtpSendError(message: string): PosActionError {
   return new PosActionError("OTP_SEND_FAILED", message);
 }
 
-/** Step 1: send a one-time SMS code and create the user on verification. */
+/**
+ * Step 1: send a one-time SMS code and create the user on verification.
+ * Optional lead details from the registration form travel in Auth user
+ * metadata so the auto-created profile can pick up the name and delivery
+ * city. The lead email is metadata only — never a verified sign-in email.
+ */
 export async function sendCustomerPhoneOtpAction(input: {
   phone: string;
+  name?: string;
+  email?: string;
+  location?: string;
 }): Promise<ActionResult<CustomerOtpSendResult>> {
   return runAction(async () => {
-    const { phone } = phoneOtpRequestSchema.parse(input);
+    const parsed = leadOtpRequestSchema.parse(input);
+    const lead: LeadProfileDetails = {
+      name: parsed.name || undefined,
+      email: parsed.email || undefined,
+      location: parsed.location || undefined,
+    };
 
     if (isLocalMode()) {
-      return localSendPhoneOtp(phone);
+      return localSendPhoneOtp(parsed.phone, lead);
     }
 
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.auth.signInWithOtp({
-      phone,
+      phone: parsed.phone,
       options: {
         shouldCreateUser: true,
         channel: "sms",
         data: {
-          phone,
-          signup_source: "customer_phone_otp",
+          phone: parsed.phone,
+          name: lead.name ?? null,
+          full_name: lead.name ?? null,
+          lead_email: lead.email ?? null,
+          location: lead.location ?? null,
+          signup_source: lead.name
+            ? "customer_lead_registration"
+            : "customer_phone_otp",
         },
       },
     });
 
     if (error) throw mapOtpSendError(error.message);
-    return { phone, otpSent: true } satisfies CustomerOtpSendResult;
+    return { phone: parsed.phone, otpSent: true } satisfies CustomerOtpSendResult;
   });
 }
 
@@ -68,12 +91,20 @@ export async function sendCustomerPhoneOtpAction(input: {
 export async function verifyCustomerPhoneOtpAction(input: {
   phone: string;
   token: string;
+  name?: string;
+  email?: string;
+  location?: string;
 }): Promise<ActionResult<CustomerAuthSuccess>> {
   return runAction(async () => {
-    const parsed = phoneOtpVerifySchema.parse(input);
+    const parsed = leadOtpVerifySchema.parse(input);
+    const lead: LeadProfileDetails = {
+      name: parsed.name || undefined,
+      email: parsed.email || undefined,
+      location: parsed.location || undefined,
+    };
 
     if (isLocalMode()) {
-      const user = await localVerifyPhoneOtp(parsed.phone, parsed.token);
+      const user = await localVerifyPhoneOtp(parsed.phone, parsed.token, lead);
       await setLocalSession(user.userId);
       revalidatePath("/", "layout");
       return user;
@@ -94,6 +125,14 @@ export async function verifyCustomerPhoneOtpAction(input: {
     }
 
     await ensureCustomerProfileForUser(data.user);
+    // Lead capture is best-effort: the verified session must not fail just
+    // because the optional name/city could not be saved (both remain in
+    // Auth metadata and can be completed later in My Profile).
+    try {
+      await applyCustomerLeadDetails(data.user, lead);
+    } catch {
+      // Intentionally ignored — see note above.
+    }
     revalidatePath("/", "layout");
 
     return {

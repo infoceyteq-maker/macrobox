@@ -82,13 +82,14 @@ The full implementation map is in `docs/FOLDER_STRUCTURE.md`. Key additions:
 - `supabase/migrations/202610270005_public_menu_read.sql` — anonymous RLS read for active menu items only; no prices or private order data are exposed.
 - `supabase/migrations/202610270009_tiered_transport_rate.sql` — approved LKR distance-tiered transport billing and Admin activation RPC.
 - `supabase/migrations/202610270010_customer_profile_otp.sql` — passwordless customer profile fields, OTP provisioning RPC, and customer-only profile update RPC.
+- `supabase/migrations/202610270011_lead_registration.sql` — registration lead capture: Auth metadata name/city are written into the auto-created customer profile (the unverified lead email stays in Auth metadata only).
 
 Print rules are in `app/globals.css`: `@page { size: 80mm auto; margin: 0; }` plus black-and-white, shadow-free `.thermal-print` output. The approved LKR distance-tiered transport rate is implemented in `lib/pos/transport.ts` and the authoritative SQL function; no real meal prices, salaries, Google Maps key, or health claims were invented. Product `0.00` still means “price pending” until the business supplies approved prices.
 
 ## Production authentication and routes
 
 - Public customer menu: `/`; cart: `/cart`.
-- Customer registration / sign-in: `/customer/login` (passwordless phone OTP; same flow creates new accounts).
+- Customer registration: `/customer/register` (lead form — name, phone, optional email and delivery city — then SMS OTP; verification auto-creates the profile and continues to the menu). Returning customer sign-in: `/customer/login` (passwordless phone OTP only). `/menu` redirects to `/`.
 - Customer profile: `/profile` (optional name, delivery address, notes, and email magic link).
 - Customer tracking: `/orders`; digital e-bill: `/bill/[orderId]`.
 - Master Admin login: `/admin/login` (no self-registration); panel: `/admin`.
