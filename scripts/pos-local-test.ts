@@ -11,6 +11,7 @@ import {
   localClearTransportRate,
   localCreateCategory,
   localCreateOrder,
+  localGetActor,
   localGetDeliverySettings,
   localGetPublicMenu,
   localLoadDashboardData,
@@ -328,6 +329,25 @@ async function main() {
     "otp.customer@macrobox.local",
   );
   check("Optional email link attaches email", linkedEmail.email === "otp.customer@macrobox.local");
+
+  const leadPhone = "+94000000456";
+  const leadSend = await localSendPhoneOtp(leadPhone, {
+    name: "Lead Test Customer",
+    email: "lead@macrobox.local",
+    location: "Kandy",
+  });
+  const leadCustomer = await localVerifyPhoneOtp(leadPhone, leadSend.devOtp);
+  const leadProfile = await localGetActor(leadCustomer.userId);
+  check(
+    "Lead registration saves name and delivery city",
+    leadProfile.name === "Lead Test Customer" &&
+      leadProfile.delivery_address === "Kandy",
+    `${leadProfile.name} / ${leadProfile.delivery_address}`,
+  );
+  check(
+    "Lead email stays unverified (not a profile sign-in email)",
+    leadProfile.email === null,
+  );
 
   const phoneLookup = await db.query<{ email: string | null }>(
     "select public.find_customer_signin_email($1) as email",

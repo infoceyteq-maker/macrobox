@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CATALOG_SEED_MEALS } from "./catalog-seed";
-import type { CustomerAuthSuccess, CustomerProfileInput } from "./customer-auth";
+import type {
+  CustomerAuthSuccess,
+  CustomerProfileInput,
+  LeadProfileDetails,
+} from "./customer-auth";
 import { LOCAL_CUSTOMER_OTP } from "./customer-auth";
 import { normalizeDatabaseError, PosActionError } from "./errors";
 import type { DashboardData, DashboardOrder, DirectoryUser } from "./dashboard-types";
@@ -61,6 +65,10 @@ const TIERED_TRANSPORT_MIGRATION_PATH = path.join(
 const CUSTOMER_PROFILE_OTP_MIGRATION_PATH = path.join(
   process.cwd(),
   "supabase/migrations/202610270010_customer_profile_otp.sql",
+);
+const LEAD_REGISTRATION_MIGRATION_PATH = path.join(
+  process.cwd(),
+  "supabase/migrations/202610270011_lead_registration.sql",
 );
 
 const ROLE_LABELS: Record<AppRole, string> = {
@@ -198,6 +206,9 @@ async function initDb(): Promise<PGlite> {
   const customerProfileOtpMigration = await fs.readFile(CUSTOMER_PROFILE_OTP_MIGRATION_PATH, "utf8");
   await db.exec(customerProfileOtpMigration);
 
+  const leadRegistrationMigration = await fs.readFile(LEAD_REGISTRATION_MIGRATION_PATH, "utf8");
+  await db.exec(leadRegistrationMigration);
+
   await db.exec(`
     create table if not exists public.local_auth_users (
       id uuid primary key references auth.users(id) on delete cascade,
@@ -210,7 +221,10 @@ async function initDb(): Promise<PGlite> {
     create table if not exists public.local_phone_otps (
       phone text primary key,
       otp text not null,
-      expires_at timestamptz not null default now()
+      expires_at timestamptz not null default now(),
+      lead_name text,
+      lead_email text,
+      lead_location text
     );
   `);
 
@@ -349,15 +363,26 @@ export async function localSignIn(email: string, password: string): Promise<stri
 /** Local preview equivalent of Supabase phone OTP send. */
 export async function localSendPhoneOtp(
   phone: string,
+  lead?: LeadProfileDetails,
 ): Promise<{ phone: string; otpSent: boolean; devOtp: string }> {
   const db = await getLocalDb();
   await db.query(
-    `insert into public.local_phone_otps (phone, otp, expires_at)
-     values ($1, $2, now() + interval '5 minutes')
+    `insert into public.local_phone_otps
+       (phone, otp, expires_at, lead_name, lead_email, lead_location)
+     values ($1, $2, now() + interval '5 minutes', $3, $4, $5)
      on conflict (phone) do update
        set otp = excluded.otp,
-           expires_at = excluded.expires_at`,
-    [phone, LOCAL_CUSTOMER_OTP],
+           expires_at = excluded.expires_at,
+           lead_name = excluded.lead_name,
+           lead_email = excluded.lead_email,
+           lead_location = excluded.lead_location`,
+    [
+      phone,
+      LOCAL_CUSTOMER_OTP,
+      lead?.name?.trim() || null,
+      lead?.email?.trim().toLowerCase() || null,
+      lead?.location?.trim() || null,
+    ],
   );
   return { phone, otpSent: true, devOtp: LOCAL_CUSTOMER_OTP };
 }
@@ -366,10 +391,11 @@ export async function localSendPhoneOtp(
 export async function localVerifyPhoneOtp(
   phone: string,
   token: string,
+  lead?: LeadProfileDetails,
 ): Promise<CustomerAuthSuccess> {
   const db = await getLocalDb();
   const otpResult = await db.query<AnyRow>(
-    `select otp from public.local_phone_otps
+    `select otp, lead_name, lead_email, lead_location from public.local_phone_otps
       where phone = $1 and expires_at > now()`,
     [phone],
   );
@@ -379,6 +405,13 @@ export async function localVerifyPhoneOtp(
       "That verification code is invalid or has expired.",
     );
   }
+
+  const leadName =
+    lead?.name?.trim() || (otpResult.rows[0].lead_name as string | null) || "";
+  const leadLocation =
+    lead?.location?.trim() ||
+    (otpResult.rows[0].lead_location as string | null) ||
+    "";
 
   let userResult = await db.query<AnyRow>(
     `select id, email from public.app_users
@@ -395,19 +428,39 @@ export async function localVerifyPhoneOtp(
   if (userResult.rows[0]) {
     userId = String(userResult.rows[0].id);
     email = userResult.rows[0].email ? String(userResult.rows[0].email) : "";
+    // Returning customer: only fill an empty delivery address with the
+    // registration city; never overwrite details saved in My Profile.
+    if (leadLocation) {
+      await db.query(
+        `update public.app_users
+            set delivery_address = coalesce(delivery_address, $2), updated_at = now()
+          where id = $1`,
+        [userId, leadLocation],
+      );
+    }
   } else {
     userId = randomUUID();
-    const initialName = `Customer ${phone.slice(-4)}`;
+    const initialName = leadName || `Customer ${phone.slice(-4)}`;
     await db.query(
       `insert into auth.users (id, email, raw_user_meta_data)
        values ($1, null, $2::jsonb)`,
-      [userId, JSON.stringify({ phone, name: initialName, signup_source: "customer_phone_otp" })],
+      [
+        userId,
+        JSON.stringify({
+          phone,
+          name: initialName,
+          full_name: initialName,
+          location: leadLocation || null,
+          signup_source: leadName ? "customer_lead_registration" : "customer_phone_otp",
+        }),
+      ],
     );
     await db.query(
       `update public.app_users
-          set role = 'CUSTOMER', status = 'ACTIVE', name = $2, email = null, phone = $3
+          set role = 'CUSTOMER', status = 'ACTIVE', name = $2, email = null, phone = $3,
+              delivery_address = coalesce(delivery_address, $4)
         where id = $1`,
-      [userId, initialName, phone],
+      [userId, initialName, phone, leadLocation || null],
     );
     email = "";
   }
