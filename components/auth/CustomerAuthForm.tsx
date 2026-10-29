@@ -9,6 +9,7 @@ import {
   sendCustomerPhoneOtpAction,
   verifyCustomerPhoneOtpAction,
 } from "@/app/actions/customer-auth";
+import { sendCustomerEmailLinkAction } from "@/app/actions/customer-profile";
 import { NEU, cn } from "@/components/ui/neu";
 import { notify } from "@/lib/ui/toast";
 
@@ -18,7 +19,7 @@ interface CustomerAuthFormProps {
 
 const inputClass = cn(NEU.input, "px-5 py-4");
 
-type Phase = "phone" | "verify" | "google";
+type Phase = "phone" | "verify" | "link";
 
 /** Inline Google "G" mark (no external hotlinked asset). */
 function GoogleIcon() {
@@ -51,6 +52,8 @@ export default function CustomerAuthForm({
   const [phase, setPhase] = useState<Phase>("phone");
   const [phone, setPhone] = useState("");
   const [token, setToken] = useState("");
+  const [email, setEmail] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
   const [devOtp, setDevOtp] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -92,10 +95,12 @@ export default function CustomerAuthForm({
       }
 
       // Phone identity is confirmed and the profile exists. Offer the
-      // optional Google-linking step before continuing to the profile.
-      setMessage("Phone verified. You can optionally connect Google, or skip.");
+      // optional email/Google linking step before continuing to the profile.
+      setMessage(
+        "Phone verified. You can optionally link your email or Google, or skip.",
+      );
       notify.success("Welcome to MacroBox", "Your phone number is verified.");
-      setPhase("google");
+      setPhase("link");
     });
   }
 
@@ -123,9 +128,34 @@ export default function CustomerAuthForm({
     });
   }
 
-  function skipGoogle() {
+  function continueToProfile() {
     router.replace(destination());
     router.refresh();
+  }
+
+  function linkEmail(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setMessage(null);
+
+    if (!email.trim()) {
+      setError("Enter an email address first.");
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await sendCustomerEmailLinkAction({ email: email.trim() });
+      if (!result.ok) {
+        setError(result.error);
+        notify.error("Email link not sent", result.error);
+        return;
+      }
+      setEmailSent(true);
+      setMessage(
+        `Verification link sent to ${email.trim()}. Confirm it from your inbox to finish linking — you can also continue now.`,
+      );
+      notify.success("Email link sent", "Check your inbox to confirm the address.");
+    });
   }
 
   function changePhone() {
@@ -165,8 +195,9 @@ export default function CustomerAuthForm({
           <div className={cn(NEU.inset, "space-y-2 px-5 py-4 text-xs leading-6 text-[#59645e]")}>
             <p className="font-semibold text-[#2E3033]">Optional email</p>
             <p>
-              After sign-in you can add an email address in My Profile for
-              e-bills and magic-link sign-in. It is not required to place an order.
+              After phone verification you can link an email or Google in one
+              optional step, or add an email later in My Profile for e-bills
+              and magic-link sign-in. It is not required to place an order.
             </p>
           </div>
         </section>
@@ -174,7 +205,7 @@ export default function CustomerAuthForm({
         <section className={cn(NEU.card, "p-6 sm:p-9")}>
           <div className="mx-auto max-w-xl">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#7CA982]">
-              {phase === "google"
+              {phase === "link"
                 ? "Optional step"
                 : `Step ${phase === "phone" ? "1" : "2"} of 2`}
             </p>
@@ -183,14 +214,14 @@ export default function CustomerAuthForm({
                 ? "Continue with your phone"
                 : phase === "verify"
                   ? "Enter your SMS code"
-                  : "Secure your account with Gmail"}
+                  : "(Optional) Link your Email for easier access"}
             </h2>
             <p className="mt-2 text-sm text-[#6f7a74]">
               {phase === "phone"
                 ? "We will send a one-time code. New customers are created automatically."
                 : phase === "verify"
                   ? `We sent a 6-digit code to ${phone}.`
-                  : "Connect your Google account to this phone number for a faster sign-in next time. You can skip this and do it later."}
+                  : "Add an email for e-bills and magic-link sign-in, or connect Google. Both are optional — you can skip this and do it later in My Profile."}
             </p>
 
             {phase === "phone" ? (
@@ -301,6 +332,45 @@ export default function CustomerAuthForm({
                   </div>
                 ) : null}
 
+                <form onSubmit={linkEmail} className="space-y-4">
+                  <label className="block space-y-2 text-sm font-medium">
+                    <span>Email address</span>
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      placeholder="your@email.com"
+                      className={inputClass}
+                      required
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={isPending || !email.trim()}
+                    className={cn(NEU.buttonPrimary, "w-full py-4")}
+                  >
+                    {isPending ? "Linking..." : "Link Email & Continue"}
+                  </button>
+                </form>
+
+                {emailSent ? (
+                  <button
+                    type="button"
+                    onClick={continueToProfile}
+                    disabled={isPending}
+                    className={cn(NEU.button, "w-full py-4 font-bold")}
+                  >
+                    Continue to Profile
+                  </button>
+                ) : null}
+
+                <div className="flex items-center gap-3 text-xs font-semibold text-[#7b857f]">
+                  <span className={cn(NEU.insetTiny, "h-px flex-1")} />
+                  or connect with Google
+                  <span className={cn(NEU.insetTiny, "h-px flex-1")} />
+                </div>
+
                 <button
                   type="button"
                   onClick={linkGoogle}
@@ -316,7 +386,7 @@ export default function CustomerAuthForm({
 
                 <button
                   type="button"
-                  onClick={skipGoogle}
+                  onClick={continueToProfile}
                   disabled={isPending}
                   className="w-full text-center text-sm font-bold text-[#5f7b64] transition-colors hover:text-[#2E3033] disabled:opacity-55"
                 >
@@ -324,8 +394,8 @@ export default function CustomerAuthForm({
                 </button>
 
                 <p className="text-center text-xs leading-5 text-[#7b857f]">
-                  Linking Google is optional and never replaces your phone
-                  sign-in — you can always continue with the SMS code.
+                  Linking an email or Google is optional and never replaces
+                  your phone sign-in — you can always continue with the SMS code.
                 </p>
               </div>
             )}
