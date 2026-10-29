@@ -71,7 +71,7 @@ export default function CustomerNavbar() {
           href="/customer/login"
           className="shrink-0 rounded-full bg-[#8FBC8F] px-5 py-2.5 font-display text-sm font-bold text-[#22301f] shadow-[5px_5px_12px_#c6d0c2,-5px_-5px_12px_#ffffff] transition hover:bg-[#7CA982]"
         >
-          Sign In / Register
+          Sign In
         </Link>
       </div>
 
