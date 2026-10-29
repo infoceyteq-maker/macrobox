@@ -10,6 +10,11 @@ export interface CartMeal {
   imagePlaceholder: string;
 }
 
+export interface CartIngredient {
+  name: string;
+  amount: string;
+}
+
 export interface CartLine {
   mealId: string;
   day: string;
@@ -30,7 +35,9 @@ export interface CartContextValue {
   menuLoading: boolean;
   isCartOpen: boolean;
   productForMeal: (meal: CartMeal) => PublicMenuProduct | null;
+  productForIngredient: (meal: CartMeal, ingredient: CartIngredient) => PublicMenuProduct | null;
   addMeal: (meal: CartMeal, quantity?: number) => void;
+  addIngredient: (meal: CartMeal, ingredient: CartIngredient, quantity?: number) => void;
   removeLine: (mealId: string) => void;
   setQuantity: (mealId: string, quantity: number) => void;
   clear: () => void;
@@ -49,7 +56,9 @@ const fallback: CartContextValue = {
   menuLoading: true,
   isCartOpen: false,
   productForMeal: () => null,
+  productForIngredient: () => null,
   addMeal: () => undefined,
+  addIngredient: () => undefined,
   removeLine: () => undefined,
   setQuantity: () => undefined,
   clear: () => undefined,

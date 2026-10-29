@@ -310,6 +310,22 @@ async function seedCatalog(db: PGlite): Promise<void> {
         JSON.stringify(meal.macros),
       ],
     );
+
+    // Each supplied combo ingredient is also a separately purchasable daily
+    // item in the same weekday category. Its price remains the existing
+    // 0.00 "price pending" placeholder until Admin confirms real pricing.
+    for (const ingredient of meal.ingredients) {
+      await db.query(
+        `insert into public.products
+           (title, category_id, ingredients, macros, base_price, is_active)
+         select $1, $2, $3::jsonb, '{}'::jsonb, 0.00, true
+         where not exists (
+           select 1 from public.products
+           where category_id = $2 and title = $1
+         )`,
+        [ingredient.name, categoryId, JSON.stringify([ingredient])],
+      );
+    }
   }
 }
 

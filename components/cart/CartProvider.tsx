@@ -3,13 +3,27 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { getPublicMenuAction } from "@/app/actions/public-menu";
-import { CartContext, type CartLine, type CartMeal } from "@/components/cart/cart-context";
+import {
+  CartContext,
+  type CartIngredient,
+  type CartLine,
+  type CartMeal,
+} from "@/components/cart/cart-context";
 import CartDrawer from "@/components/cart/CartDrawer";
 import { cn, NEU } from "@/components/ui/neu";
 import { notify } from "@/lib/ui/toast";
 import { isPricePending, type PublicMenuData, type PublicMenuProduct } from "@/lib/pos/public-menu";
 
 const STORAGE_KEY = "macrobox_cart_v1";
+
+function ingredientLineId(mealId: string, ingredientName: string) {
+  const slug = ingredientName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `${mealId}-item-${slug || "daily-item"}`;
+}
 
 function isCartLine(value: unknown): value is CartLine {
   if (!value || typeof value !== "object") return false;
@@ -75,25 +89,57 @@ export default function CartProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const productIndex = useMemo(() => {
-    const map = new Map<string, PublicMenuProduct>();
+  const { productForMealIndex, productForIngredientIndex } = useMemo(() => {
+    const mealMap = new Map<string, PublicMenuProduct>();
+    const ingredientMap = new Map<string, PublicMenuProduct>();
+    const categoryKeysFor = (product: PublicMenuProduct) =>
+      [
+        product.categoryName.trim().toLowerCase(),
+        product.categorySlug.trim().toLowerCase(),
+        product.categoryId.trim().toLowerCase(),
+      ].filter(Boolean);
+
     for (const product of menu?.products ?? []) {
       if (!product.isActive) continue;
-      const nameKey = product.categoryName.trim().toLowerCase();
-      const slugKey = product.categorySlug.trim().toLowerCase();
-      if (!map.has(nameKey)) map.set(nameKey, product);
-      if (!map.has(slugKey)) map.set(slugKey, product);
-      map.set(product.id.toLowerCase(), product);
+      const categoryKeys = categoryKeysFor(product);
+      const titleKey = product.title.trim().toLowerCase();
+
+      // The weekday combo is the product whose title matches the catalog meal.
+      // Ingredient products live in the same weekday category, so an exact
+      // title match is required here; never fall back to the first product in
+      // a category that now also contains individual daily items.
+      for (const categoryKey of categoryKeys) {
+        const comboKey = `${categoryKey}:combo:${titleKey}`;
+        if (!mealMap.has(comboKey)) mealMap.set(comboKey, product);
+        const ingredientKey = `${categoryKey}:ingredient:${titleKey}`;
+        if (!ingredientMap.has(ingredientKey)) ingredientMap.set(ingredientKey, product);
+      }
+      mealMap.set(product.id.toLowerCase(), product);
     }
-    return map;
+
+    return { productForMealIndex: mealMap, productForIngredientIndex: ingredientMap };
   }, [menu]);
 
   const productForMeal = useCallback(
-    (meal: CartMeal): PublicMenuProduct | null =>
-      productIndex.get(meal.day.trim().toLowerCase()) ??
-      productIndex.get(meal.id.trim().toLowerCase()) ??
-      null,
-    [productIndex],
+    (meal: CartMeal): PublicMenuProduct | null => {
+      const dayKey = meal.day.trim().toLowerCase();
+      const titleKey = meal.title.trim().toLowerCase();
+      return (
+        productForMealIndex.get(`${dayKey}:combo:${titleKey}`) ??
+        productForMealIndex.get(meal.id.trim().toLowerCase()) ??
+        null
+      );
+    },
+    [productForMealIndex],
+  );
+
+  const productForIngredient = useCallback(
+    (meal: CartMeal, ingredient: CartIngredient): PublicMenuProduct | null => {
+      const dayKey = meal.day.trim().toLowerCase();
+      const ingredientKey = ingredient.name.trim().toLowerCase();
+      return productForIngredientIndex.get(`${dayKey}:ingredient:${ingredientKey}`) ?? null;
+    },
+    [productForIngredientIndex],
   );
 
   const addMeal = useCallback(
@@ -133,6 +179,44 @@ export default function CartProvider({ children }: { children: ReactNode }) {
     [productForMeal],
   );
 
+  const addIngredient = useCallback(
+    (meal: CartMeal, ingredient: CartIngredient, quantity = 1) => {
+      const product = productForIngredient(meal, ingredient);
+      if (!product) {
+        notify.warning("Menu is syncing", "Please try again in a moment.");
+        return;
+      }
+      const lineId = ingredientLineId(meal.id, ingredient.name);
+      const unitPrice = Number(product.basePrice) || 0;
+      const pending = isPricePending(product.basePrice);
+      setLines((current) => {
+        const existing = current.find((line) => line.mealId === lineId);
+        if (existing) {
+          return current.map((line) =>
+            line.mealId === lineId
+              ? { ...line, quantity: Math.min(99, line.quantity + quantity) }
+              : line,
+          );
+        }
+        return [
+          ...current,
+          {
+            mealId: lineId,
+            day: meal.day,
+            title: `${ingredient.name} · ${ingredient.amount}`,
+            image: meal.imagePlaceholder,
+            productId: product.id,
+            unitPrice,
+            quantity: Math.min(99, Math.max(1, quantity)),
+            pricePending: pending,
+          },
+        ];
+      });
+      notify.success("Added to cart", `${meal.day} · ${ingredient.name}`);
+    },
+    [productForIngredient],
+  );
+
   const removeLine = useCallback((mealId: string) => {
     setLines((current) => current.filter((line) => line.mealId !== mealId));
   }, []);
@@ -167,7 +251,9 @@ export default function CartProvider({ children }: { children: ReactNode }) {
         menuLoading,
         isCartOpen,
         productForMeal,
+        productForIngredient,
         addMeal,
+        addIngredient,
         removeLine,
         setQuantity,
         clear,

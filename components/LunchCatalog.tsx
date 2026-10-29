@@ -621,7 +621,7 @@ export interface LunchCatalogProps {
 
 export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
   const menu = useMealMenu(mealUpdates);
-  const { addMeal, openCart, menuLoading, productForMeal } = useCart();
+  const { addMeal, addIngredient, openCart, menuLoading, productForMeal, productForIngredient } = useCart();
   const [activeDayId, setActiveDayId] = useState(lunchMenu[0].id);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showExploreCategories, setShowExploreCategories] = useState(false);
@@ -836,6 +836,18 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
     openCart();
   }, [addMeal, openCart, todayMeal]);
 
+  const orderIndividualItem = useCallback(
+    (ingredient: Meal["ingredients"][number]) => {
+      if (!productForIngredient(todayMeal, ingredient)) {
+        addIngredient(todayMeal, ingredient, 1);
+        return;
+      }
+      addIngredient(todayMeal, ingredient, 1);
+      openCart();
+    },
+    [addIngredient, openCart, productForIngredient, todayMeal],
+  );
+
   return (
     <LayoutGroup id="macrobox-lunch-catalog">
       <main className="relative min-h-screen overflow-hidden bg-[#DCE6DA] px-4 py-6 selection:bg-[#8FBC8F]/30 sm:px-8 sm:py-10 lg:px-12 lg:py-12">
@@ -1012,8 +1024,8 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
                   Individual Daily Items
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-[#51645B]">
-                  Each card shows one item from today&apos;s combo. Online Order adds today&apos;s full combo to
-                  your cart and opens checkout.
+                  Each card is a separate item from today&apos;s combo. Online Order adds only that item to your
+                  cart and opens checkout.
                 </p>
               </div>
               <span className={cn("rounded-full bg-[#DCE6DA] px-3 py-1.5 text-xs font-bold", RAISED_TINY)}>
@@ -1039,10 +1051,12 @@ export function LunchCatalog({ mealUpdates }: LunchCatalogProps = {}) {
                     <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-[#6f7a74]">
                       {ingredient.amount} · {todayMeal.day}
                     </p>
-                    <p className="mt-3 text-xs leading-5 text-[#6f7a74]">Included in today&apos;s main combo.</p>
+                    <p className="mt-3 text-xs leading-5 text-[#6f7a74]">
+                      Available separately. Price pending until confirmed.
+                    </p>
                     <button
                       type="button"
-                      onClick={orderTodayCombo}
+                      onClick={() => orderIndividualItem(ingredient)}
                       className={cn(
                         "mt-4 w-full rounded-xl px-3 py-2.5 text-xs font-bold text-[#22301f]",
                         ACCENT_SURFACE,

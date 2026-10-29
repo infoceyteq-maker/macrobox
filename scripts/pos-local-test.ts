@@ -47,7 +47,11 @@ async function main() {
   check("Actor is Admin", initial.actor.role === "ADMIN");
   check("Six demo users seeded", initial.users.length === 6);
   check("Five weekday categories seeded", initial.categories.length === 5);
-  check("Five catalog products seeded", initial.products.length === 5);
+  check(
+    "Five combo products plus individual daily item products seeded",
+    initial.products.length === 30,
+    `${initial.products.length} products`,
+  );
   check("Six transition rules seeded", initial.transitions.length === 6);
   check(
     "Approved LKR tiered transport model is active",
@@ -59,7 +63,7 @@ async function main() {
   const publicMenu = await localGetPublicMenu();
   check(
     "Public menu readable without a session",
-    publicMenu.products.length === 5 && publicMenu.categories.length === 5,
+    publicMenu.products.length === 30 && publicMenu.categories.length === 5,
     `${publicMenu.products.length} products / ${publicMenu.categories.length} categories`,
   );
   check(
