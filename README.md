@@ -84,6 +84,7 @@ The full implementation map is in `docs/FOLDER_STRUCTURE.md`. Key additions:
 - `supabase/migrations/202610270010_customer_profile_otp.sql` — passwordless customer profile fields, OTP provisioning RPC, and customer-only profile update RPC.
 - `supabase/migrations/202610270011_lead_registration.sql` — registration lead capture: Auth metadata name/city are written into the auto-created customer profile (the unverified lead email stays in Auth metadata only).
 - `supabase/migrations/202610270012_individual_daily_items.sql` — derives separately purchasable products from each weekday combo's supplied ingredients; standalone prices remain 0.00 ("price pending") until Admin confirms them.
+- `supabase/migrations/202610270013_products_management.sql` — Master Admin Products Management fields (weekday/Everyday assignment, quantity, product category, private cost price, retail price, image URL) and the public-read `public_assets` storage bucket used for product images.
 
 Print rules are in `app/globals.css`: `@page { size: 80mm auto; margin: 0; }` plus black-and-white, shadow-free `.thermal-print` output. The approved LKR distance-tiered transport rate is implemented in `lib/pos/transport.ts` and the authoritative SQL function; no real meal prices, salaries, Google Maps key, or health claims were invented. Product `0.00` still means “price pending” until the business supplies approved prices.
 
@@ -94,7 +95,7 @@ Print rules are in `app/globals.css`: `@page { size: 80mm auto; margin: 0; }` pl
 - Customer registration: `/customer/register` (lead form — name, phone, optional email and delivery city — then SMS OTP; verification auto-creates the profile and continues to the menu). Returning customer sign-in: `/customer/login` (passwordless phone OTP; alternative email-code sign-in at `/customer/email-login`, quick name/phone OTP sign-in at `/customer/quick-login`, then one optional step to link an email (verified magic link) and/or a Google identity via Supabase `linkIdentity` — Google requires the Google provider and manual linking enabled in Supabase Auth; both are skippable, and the generic `/login` route remains employee-only). `/menu` redirects to `/`.
 - Customer profile: `/profile` (optional name, delivery address, notes, and email magic link).
 - Customer tracking: `/orders`; digital e-bill: `/bill/[orderId]`.
-- Master Admin login: `/admin/login` (no self-registration); panel: `/admin`.
+- Master Admin login: `/admin/login` (no self-registration); panel: `/admin`. The **Products** tab inside the Master Admin portal is the dedicated Products Management module: Master Admin can add/edit/delete products, set weekday/Everyday assignment, quantity, category, nutrition (including vitamins/minerals), private Cost Price, customer-facing Wholesale/Retail Price, visibility, and primary image (uploaded server-side to Supabase Storage `public_assets/product_images/` after an ADMIN role check). Staff/POS users do not see this module, and the public menu never returns cost price.
 - Front Desk / POS login: `/frontdesk/login`; dashboard: `/pos`.
 - Driver login: `/driver/login`; portal: `/driver`.
 - Generic employee login: `/login`.

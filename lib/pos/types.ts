@@ -61,9 +61,15 @@ export interface ProductRow {
   id: string;
   title: string;
   category_id: string;
+  day_assignment: string;
+  quantity: string | null;
+  product_category: string | null;
   ingredients: JsonValue[];
   macros: JsonObject;
   base_price: DecimalValue;
+  cost_price: DecimalValue;
+  retail_price: DecimalValue;
+  image_url: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

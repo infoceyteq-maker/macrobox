@@ -13,6 +13,7 @@ import {
   localClearTransportRate,
   localCreateCategory,
   localCreateOrder,
+  localDeleteProduct,
   localGetActor,
   localGetDeliverySettings,
   localGetPublicMenu,
@@ -21,6 +22,7 @@ import {
   localSetTransportRate,
   localSignIn,
   localTransition,
+  localUpsertProduct,
 } from "../lib/pos/local-db";
 import {
   calculateTransportCost,
@@ -218,6 +220,61 @@ async function main() {
     blocked = error instanceof Error && /FORBIDDEN|role/i.test(error.message);
   }
   check("Driver blocked from Admin category creation", blocked);
+
+  const managedProduct = await localUpsertProduct(ADMIN.id, {
+    title: "Admin Test Dates Portion",
+    dayAssignment: "Everyday",
+    quantity: "50g",
+    productCategory: "Portions",
+    ingredients: [{ name: "Admin Test Dates Portion", amount: "50g" }],
+    macros: { protein: "1g", carbs: "30g", fat: "0g", calories: "120 kcal", vitamins: "B6", minerals: "Potassium" },
+    costPrice: 250,
+    retailPrice: 1200,
+    basePrice: 1200,
+    imageUrl: "https://example.com/dates.jpg",
+    isActive: true,
+  });
+  check(
+    "Master Admin product created with Products Management fields",
+    managedProduct.day_assignment === "Everyday" &&
+      managedProduct.product_category === "Portions" &&
+      Number(managedProduct.cost_price) === 250 &&
+      Number(managedProduct.retail_price) === 1200 &&
+      managedProduct.image_url === "https://example.com/dates.jpg",
+  );
+
+  const menuWithManagedProduct = await localGetPublicMenu();
+  const publicManaged = menuWithManagedProduct.products.find((product) => product.id === managedProduct.id);
+  check(
+    "Public menu reflects Admin product without cost price",
+    Boolean(publicManaged) &&
+      publicManaged?.productCategory === "Portions" &&
+      Number(publicManaged?.basePrice) === 1200 &&
+      !("costPrice" in (publicManaged ?? {})) &&
+      !("cost_price" in (publicManaged ?? {})),
+  );
+
+  let productBlocked = false;
+  try {
+    await localUpsertProduct(DRIVER.id, {
+      title: "Driver Should Not Create",
+      dayAssignment: "Everyday",
+      quantity: "1",
+      productCategory: "Other",
+      ingredients: [],
+      macros: {},
+      costPrice: 1,
+      retailPrice: 2,
+      basePrice: 2,
+      isActive: true,
+    });
+  } catch (error) {
+    productBlocked = error instanceof Error && /FORBIDDEN|role/i.test(error.message);
+  }
+  check("Driver blocked from Products Management upsert", productBlocked);
+
+  const deletedProduct = await localDeleteProduct(ADMIN.id, { productId: managedProduct.id });
+  check("Master Admin product deleted", deletedProduct.id === managedProduct.id);
 
   const persistedSettings = await localGetDeliverySettings();
   check(

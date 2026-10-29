@@ -10,6 +10,26 @@ const note = z.string().trim().min(1).max(1000).optional();
 const expectedVersion = z.number().int().min(0).optional();
 const expectedStatus = orderStatus.optional();
 
+export const PRODUCT_DAY_ASSIGNMENTS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Everyday",
+] as const;
+export type ProductDayAssignment = (typeof PRODUCT_DAY_ASSIGNMENTS)[number];
+const productDayAssignment = z.enum(PRODUCT_DAY_ASSIGNMENTS);
+const optionalProductText = (max: number) =>
+  z.optional(
+    z
+      .string()
+      .trim()
+      .max(max)
+      .nullable()
+      .transform((value) => (value === "" ? null : value)),
+  );
+
 export const transitionMetadataSchema = z
   .object({
     driverId: uuid.optional(),
@@ -147,15 +167,40 @@ export const upsertProductSchema = z
   .object({
     id: uuid.optional(),
     title: z.string().trim().min(1).max(200),
-    categoryId: uuid,
+    categoryId: uuid.optional(),
+    dayAssignment: productDayAssignment.optional(),
+    quantity: optionalProductText(120),
+    productCategory: optionalProductText(120),
     ingredients: jsonArray.default([]),
     macros: jsonObject.default({}),
-    basePrice: z.number().min(0),
+    // Legacy callers submit basePrice; Products Management submits the
+    // explicit retailPrice. The server keeps base_price = retail_price so
+    // order snapshots and the existing P&L/order math stay consistent.
+    basePrice: z.number().min(0).optional(),
+    costPrice: z.number().min(0).optional(),
+    retailPrice: z.number().min(0).optional(),
+    imageUrl: optionalProductText(5000),
     isActive: z.boolean().default(true),
+  })
+  .strict()
+  .refine((input) => Boolean(input.categoryId || input.dayAssignment), {
+    message: "A weekday/Everyday assignment or category is required.",
+    path: ["dayAssignment"],
+  })
+  .refine((input) => input.retailPrice !== undefined || input.basePrice !== undefined, {
+    message: "Wholesale/Retail Price is required.",
+    path: ["retailPrice"],
+  });
+
+export type UpsertProductInput = z.infer<typeof upsertProductSchema>;
+
+export const deleteProductSchema = z
+  .object({
+    productId: uuid,
   })
   .strict();
 
-export type UpsertProductInput = z.infer<typeof upsertProductSchema>;
+export type DeleteProductInput = z.infer<typeof deleteProductSchema>;
 
 export const updateEmployeeSchema = z
   .object({

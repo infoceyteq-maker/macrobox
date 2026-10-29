@@ -17,6 +17,13 @@ type ProductRow = {
   title: string;
   category_id: string;
   base_price: number | string;
+  retail_price: number | string | null;
+  day_assignment: string | null;
+  quantity: string | null;
+  product_category: string | null;
+  image_url: string | null;
+  ingredients: unknown;
+  macros: unknown;
   is_active: boolean;
 };
 
@@ -39,7 +46,9 @@ export async function getPublicMenuAction(): Promise<ActionResult<PublicMenuData
     const [productsResult, categoriesResult] = await Promise.all([
       supabase
         .from("products")
-        .select("id,title,category_id,base_price,is_active")
+        .select(
+          "id,title,category_id,base_price,retail_price,day_assignment,quantity,product_category,image_url,ingredients,macros,is_active",
+        )
         .eq("is_active", true)
         .order("title"),
       supabase
@@ -71,7 +80,16 @@ export async function getPublicMenuAction(): Promise<ActionResult<PublicMenuData
         categoryId: row.category_id,
         categoryName: category?.name ?? "Menu",
         categorySlug: category?.slug ?? "menu",
-        basePrice: row.base_price,
+        basePrice: row.retail_price ?? row.base_price,
+        dayAssignment: row.day_assignment ?? category?.name ?? "Everyday",
+        quantity: row.quantity ?? null,
+        productCategory: row.product_category ?? null,
+        imageUrl: row.image_url ?? null,
+        ingredients: Array.isArray(row.ingredients) ? (row.ingredients as PublicMenuProduct["ingredients"]) : [],
+        macros:
+          row.macros && typeof row.macros === "object" && !Array.isArray(row.macros)
+            ? (row.macros as PublicMenuProduct["macros"])
+            : {},
         isActive: Boolean(row.is_active),
       };
     });

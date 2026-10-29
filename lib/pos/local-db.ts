@@ -27,6 +27,7 @@ import type {
   AssignDriverInput,
   CreateCategoryInput,
   CreateOrderInput,
+  DeleteProductInput,
   SetProductVisibilityInput,
   SetTransportRateInput,
   UpdateEmployeeInput,
@@ -69,6 +70,10 @@ const CUSTOMER_PROFILE_OTP_MIGRATION_PATH = path.join(
 const LEAD_REGISTRATION_MIGRATION_PATH = path.join(
   process.cwd(),
   "supabase/migrations/202610270011_lead_registration.sql",
+);
+const PRODUCTS_MANAGEMENT_MIGRATION_PATH = path.join(
+  process.cwd(),
+  "supabase/migrations/202610270013_products_management.sql",
 );
 
 const ROLE_LABELS: Record<AppRole, string> = {
@@ -209,6 +214,9 @@ async function initDb(): Promise<PGlite> {
   const leadRegistrationMigration = await fs.readFile(LEAD_REGISTRATION_MIGRATION_PATH, "utf8");
   await db.exec(leadRegistrationMigration);
 
+  const productsManagementMigration = await fs.readFile(PRODUCTS_MANAGEMENT_MIGRATION_PATH, "utf8");
+  await db.exec(productsManagementMigration);
+
   await db.exec(`
     create table if not exists public.local_auth_users (
       id uuid primary key references auth.users(id) on delete cascade,
@@ -297,8 +305,8 @@ async function seedCatalog(db: PGlite): Promise<void> {
 
     await db.query(
       `insert into public.products
-         (title, category_id, ingredients, macros, base_price, is_active)
-       select $1, $2, $3::jsonb, $4::jsonb, 0.00, true
+         (title, category_id, day_assignment, product_category, ingredients, macros, base_price, cost_price, retail_price, is_active)
+       select $1, $2, $5, 'Healthy Meals', $3::jsonb, $4::jsonb, 0.00, 0.00, 0.00, true
        where not exists (
          select 1 from public.products
          where category_id = $2 and title = $1
@@ -308,6 +316,7 @@ async function seedCatalog(db: PGlite): Promise<void> {
         categoryId,
         JSON.stringify(meal.ingredients),
         JSON.stringify(meal.macros),
+        meal.day,
       ],
     );
 
@@ -317,13 +326,13 @@ async function seedCatalog(db: PGlite): Promise<void> {
     for (const ingredient of meal.ingredients) {
       await db.query(
         `insert into public.products
-           (title, category_id, ingredients, macros, base_price, is_active)
-         select $1, $2, $3::jsonb, '{}'::jsonb, 0.00, true
+           (title, category_id, day_assignment, quantity, ingredients, macros, base_price, cost_price, retail_price, is_active)
+         select $1, $2, $4, $5, $3::jsonb, '{}'::jsonb, 0.00, 0.00, 0.00, true
          where not exists (
            select 1 from public.products
            where category_id = $2 and title = $1
          )`,
-        [ingredient.name, categoryId, JSON.stringify([ingredient])],
+        [ingredient.name, categoryId, JSON.stringify([ingredient]), meal.day, ingredient.amount],
       );
     }
   }
@@ -736,7 +745,9 @@ export async function localGetPublicMenu(): Promise<PublicMenuData> {
        order by sort_order, name`,
     ),
     db.query<AnyRow>(
-      `select p.id, p.title, p.category_id, p.base_price, p.is_active,
+      `select p.id, p.title, p.category_id, p.base_price, p.retail_price,
+              p.day_assignment, p.quantity, p.product_category, p.image_url,
+              p.ingredients, p.macros, p.is_active,
               c.name as category_name, c.slug as category_slug
        from public.products p
        join public.categories c on c.id = p.category_id
@@ -761,7 +772,16 @@ export async function localGetPublicMenu(): Promise<PublicMenuData> {
       categoryId: row.category_id,
       categoryName: row.category_name,
       categorySlug: row.category_slug,
-      basePrice: row.base_price,
+      basePrice: row.retail_price ?? row.base_price,
+      dayAssignment: row.day_assignment ?? row.category_name,
+      quantity: row.quantity ?? null,
+      productCategory: row.product_category ?? null,
+      imageUrl: row.image_url ?? null,
+      ingredients: Array.isArray(row.ingredients) ? row.ingredients : [],
+      macros:
+        row.macros && typeof row.macros === "object" && !Array.isArray(row.macros)
+          ? row.macros
+          : {},
       isActive: Boolean(row.is_active),
     })),
   );
@@ -849,6 +869,45 @@ export async function localCreateCategory(
   }
 }
 
+const PRODUCT_DAY_SORT: Record<string, number> = {
+  Monday: 1,
+  Tuesday: 2,
+  Wednesday: 3,
+  Thursday: 4,
+  Friday: 5,
+  Everyday: 6,
+};
+
+async function resolveLocalProductCategoryId(
+  db: PGlite,
+  input: UpsertProductInput,
+): Promise<string> {
+  if (input.dayAssignment) {
+    const slug = input.dayAssignment.toLowerCase();
+    const existing = await db.query<AnyRow>(
+      "select id from public.categories where slug = $1",
+      [slug],
+    );
+    if (existing.rows[0]?.id) return existing.rows[0].id as string;
+
+    const inserted = await db.query<AnyRow>(
+      `insert into public.categories (name, slug, description, sort_order, is_active)
+       values ($1, $2, $3, $4, true)
+       returning id`,
+      [
+        input.dayAssignment,
+        slug,
+        input.dayAssignment === "Everyday" ? "Available every day" : null,
+        PRODUCT_DAY_SORT[input.dayAssignment] ?? 99,
+      ],
+    );
+    return inserted.rows[0].id as string;
+  }
+
+  if (input.categoryId) return input.categoryId;
+  throw new PosActionError("VALIDATION_ERROR", "A product category/day assignment is required.");
+}
+
 export async function localUpsertProduct(
   userId: string,
   input: UpsertProductInput,
@@ -856,44 +915,123 @@ export async function localUpsertProduct(
   await assertRole(userId, ["ADMIN"]);
   const db = await getLocalDb();
   try {
+    const existingResult = input.id
+      ? await db.query<AnyRow>("select * from public.products where id = $1", [input.id])
+      : null;
+    const existing = existingResult?.rows[0] as AnyRow | undefined;
+    if (input.id && !existing) {
+      throw new PosActionError("PRODUCT_NOT_FOUND", "Product not found.");
+    }
+
+    const categoryId = await resolveLocalProductCategoryId(db, input);
+    const categoryResult = await db.query<AnyRow>(
+      "select name from public.categories where id = $1",
+      [categoryId],
+    );
+    const categoryName = (categoryResult.rows[0]?.name as string | undefined) ?? "Everyday";
+    const dayAssignment =
+      input.dayAssignment ??
+      (existing?.day_assignment as string | undefined) ??
+      (PRODUCT_DAY_SORT[categoryName] ? categoryName : "Everyday");
+    const retailPrice =
+      input.retailPrice ?? input.basePrice ?? existing?.retail_price ?? existing?.base_price ?? 0;
+    const costPrice = input.costPrice ?? existing?.cost_price ?? 0;
+    const quantity =
+      input.quantity !== undefined ? input.quantity : (existing?.quantity ?? null);
+    const productCategory =
+      input.productCategory !== undefined
+        ? input.productCategory
+        : (existing?.product_category ?? null);
+    const imageUrl = input.imageUrl !== undefined ? input.imageUrl : (existing?.image_url ?? null);
+    const suppliedIngredients = input.ingredients as JsonValue[];
+    const ingredients =
+      suppliedIngredients.length > 0
+        ? suppliedIngredients
+        : existing?.ingredients && !input.id
+          ? (existing.ingredients as JsonValue[])
+          : existing?.ingredients && suppliedIngredients.length === 0 && input.id
+            ? (existing.ingredients as JsonValue[])
+            : [{ name: input.title, amount: quantity ?? "" }];
+
     const result = input.id
       ? await db.query(
           `update public.products set
              title = $2,
              category_id = $3,
-             ingredients = $4::jsonb,
-             macros = $5::jsonb,
-             base_price = $6,
-             is_active = $7,
+             day_assignment = $4,
+             quantity = $5,
+             product_category = $6,
+             ingredients = $7::jsonb,
+             macros = $8::jsonb,
+             base_price = $9,
+             cost_price = $10,
+             retail_price = $11,
+             image_url = $12,
+             is_active = $13,
              updated_at = now()
            where id = $1
            returning *`,
           [
             input.id,
             input.title,
-            input.categoryId,
-            JSON.stringify(input.ingredients as JsonValue[]),
+            categoryId,
+            dayAssignment,
+            quantity,
+            productCategory,
+            JSON.stringify(ingredients),
             JSON.stringify(input.macros as JsonObject),
-            input.basePrice,
+            retailPrice,
+            costPrice,
+            retailPrice,
+            imageUrl,
             input.isActive,
           ],
         )
       : await db.query(
           `insert into public.products
-             (title, category_id, ingredients, macros, base_price, is_active)
-           values ($1, $2, $3::jsonb, $4::jsonb, $5, $6)
+             (title, category_id, day_assignment, quantity, product_category,
+              ingredients, macros, base_price, cost_price, retail_price, image_url, is_active)
+           values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12)
            returning *`,
           [
             input.title,
-            input.categoryId,
-            JSON.stringify(input.ingredients as JsonValue[]),
+            categoryId,
+            dayAssignment,
+            quantity,
+            productCategory,
+            JSON.stringify(ingredients),
             JSON.stringify(input.macros as JsonObject),
-            input.basePrice,
+            retailPrice,
+            costPrice,
+            retailPrice,
+            imageUrl,
             input.isActive,
           ],
         );
     return serialize<ProductRow>(result.rows[0]);
   } catch (error) {
+    if (error instanceof PosActionError) throw error;
+    throw normalizeDatabaseError(error as { message?: string });
+  }
+}
+
+export async function localDeleteProduct(
+  userId: string,
+  input: DeleteProductInput,
+): Promise<ProductRow> {
+  await assertRole(userId, ["ADMIN"]);
+  const db = await getLocalDb();
+  try {
+    const result = await db.query(
+      "delete from public.products where id = $1 returning *",
+      [input.productId],
+    );
+    if (!result.rows[0]) {
+      throw new PosActionError("PRODUCT_NOT_FOUND", "Product not found.");
+    }
+    return serialize<ProductRow>(result.rows[0]);
+  } catch (error) {
+    if (error instanceof PosActionError) throw error;
     throw normalizeDatabaseError(error as { message?: string });
   }
 }
