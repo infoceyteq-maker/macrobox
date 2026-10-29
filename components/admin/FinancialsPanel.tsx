@@ -1,15 +1,26 @@
 "use client";
 
+import { useState } from "react";
+
+import ExpensesPanel from "@/components/admin/ExpensesPanel";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/pos/types";
 import { cn, formatAmount, formatDate, NEU } from "@/components/ui/neu";
 import { notify } from "@/lib/ui/toast";
 import type { DashboardOrder } from "@/lib/pos/dashboard-types";
-import type { DeliverySettingsRow } from "@/lib/pos/types";
+import type {
+  AppRole,
+  DeliverySettingsRow,
+  ExpenseRow,
+} from "@/lib/pos/types";
 
 interface FinancialsPanelProps {
   orders: DashboardOrder[];
   settings: DeliverySettingsRow;
   schema: string;
+  expenses?: ExpenseRow[];
+  actorRole?: AppRole;
+  masterMode?: boolean;
+  onExpensesChanged?: () => Promise<void>;
 }
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -28,7 +39,17 @@ function asNumber(value: number | string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export default function FinancialsPanel({ orders, settings, schema }: FinancialsPanelProps) {
+export default function FinancialsPanel({
+  orders,
+  settings,
+  schema,
+  expenses = [],
+  actorRole = "ADMIN",
+  masterMode = false,
+  onExpensesChanged = async () => undefined,
+}: FinancialsPanelProps) {
+  const [financeView, setFinanceView] = useState<"overview" | "expenses">("overview");
+  const canSeeExpenses = masterMode && actorRole === "ADMIN";
   const food = orders.reduce((sum, order) => sum + asNumber(order.total_food_cost), 0);
   const transport = orders.reduce((sum, order) => sum + asNumber(order.transport_cost), 0);
   const finalTotal = orders.reduce((sum, order) => sum + asNumber(order.final_total), 0);
@@ -43,6 +64,8 @@ export default function FinancialsPanel({ orders, settings, schema }: Financials
     .filter((order) => order.status === "DELIVERED")
     .reduce((sum, order) => sum + asNumber(order.final_total), 0);
   const pricePending = orders.filter((order) => asNumber(order.total_food_cost) === 0).length;
+  const loggedExpenses = expenses.reduce((sum, expense) => sum + asNumber(expense.amount), 0);
+  const provisionalNet = finalTotal - loggedExpenses;
   const counts = ORDER_STATUSES.map((status) => ({
     status,
     count: orders.filter((order) => order.status === status).length,
@@ -87,18 +110,65 @@ export default function FinancialsPanel({ orders, settings, schema }: Financials
     notify.success("Financials exported", `${orders.length} recorded orders written to CSV.`);
   }
 
+  const financeSubnav = (
+    <section className={cn(NEU.card, "flex flex-wrap items-center justify-between gap-3 p-4")}>
+      <div>
+        <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#7CA982]">Finance</p>
+        <p className="mt-1 text-sm text-[#6f7a74]">
+          {canSeeExpenses
+            ? "P&L overview and Master Admin expense records."
+            : "Recorded order value and settlement overview."}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setFinanceView("overview")}
+          className={financeView === "overview" ? NEU.buttonPrimary : NEU.button}
+        >
+          P&amp;L Overview
+        </button>
+        {canSeeExpenses ? (
+          <button
+            type="button"
+            onClick={() => setFinanceView("expenses")}
+            className={financeView === "expenses" ? NEU.buttonPrimary : NEU.button}
+          >
+            Expenses
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+
+  if (financeView === "expenses" && canSeeExpenses) {
+    return (
+      <div className="space-y-5">
+        {financeSubnav}
+        <ExpensesPanel
+          expenses={expenses}
+          actorRole={actorRole}
+          masterMode={masterMode}
+          onChanged={onExpensesChanged}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
+      {financeSubnav}
       <section className={cn(NEU.card, "p-5 sm:p-6")}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#7CA982]">
-              Financials · provisional P&amp;L
+              Finance · provisional P&amp;L
             </p>
             <h2 className="mt-1 font-display text-2xl font-bold">Recorded order value</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6f7a74]">
-              Derived only from live order rows. Cost of goods, salaries, overheads, refunds, and
-              taxes are not in the supplied schema, so no profit figure is invented.
+              Derived from live order rows minus expenses logged in Finance → Expenses. This is
+              a provisional operating view: unlogged costs, refunds, and accounting adjustments
+              are not invented or assumed.
             </p>
           </div>
           <button type="button" onClick={exportCsv} className={cn(NEU.button, "no-print")}>
@@ -110,6 +180,8 @@ export default function FinancialsPanel({ orders, settings, schema }: Financials
           <Stat label="Food subtotal" value={formatAmount(food)} hint="0.00 = price pending" />
           <Stat label="Transport" value={formatAmount(transport)} hint="Dynamic distance billing" />
           <Stat label="Final e-bill value" value={formatAmount(finalTotal)} hint="Before costs" />
+          <Stat label="Logged expenses" value={formatAmount(loggedExpenses)} hint="Finance → Expenses" />
+          <Stat label="Provisional net" value={formatAmount(provisionalNet)} hint="Order value − logged expenses" />
           <Stat label="Cash collected" value={formatAmount(collected)} hint="Delivery evidence" />
           <Stat label="Settled" value={formatAmount(settled)} hint="CLOSED orders" />
           <Stat label="Awaiting settlement" value={formatAmount(unsettled)} hint="DELIVERED orders" />

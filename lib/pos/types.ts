@@ -75,6 +75,31 @@ export interface ProductRow {
   updated_at: string;
 }
 
+export const EXPENSE_CATEGORIES = [
+  "Grocery",
+  "Meat",
+  "Vegetable",
+  "Transport",
+  "Salaries",
+  "Government Payment",
+  "Bills",
+  "Tax and Bank",
+] as const;
+
+export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
+
+export interface ExpenseRow {
+  id: string;
+  category: ExpenseCategory;
+  supplier: string;
+  amount: DecimalValue;
+  remark: string | null;
+  expense_date: string;
+  added_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DeliverySettingsRow {
   id: boolean;
   free_distance_km: DecimalValue;

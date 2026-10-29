@@ -16,6 +16,7 @@ import type {
   AppUserRow,
   CategoryRow,
   DeliverySettingsRow,
+  ExpenseRow,
   JsonObject,
   JsonValue,
   OrderRow,
@@ -27,6 +28,7 @@ import type {
   AssignDriverInput,
   CreateCategoryInput,
   CreateOrderInput,
+  CreateExpenseInput,
   DeleteProductInput,
   SetProductVisibilityInput,
   SetTransportRateInput,
@@ -74,6 +76,10 @@ const LEAD_REGISTRATION_MIGRATION_PATH = path.join(
 const PRODUCTS_MANAGEMENT_MIGRATION_PATH = path.join(
   process.cwd(),
   "supabase/migrations/202610270013_products_management.sql",
+);
+const EXPENSES_MIGRATION_PATH = path.join(
+  process.cwd(),
+  "supabase/migrations/202610270014_expenses.sql",
 );
 
 const ROLE_LABELS: Record<AppRole, string> = {
@@ -216,6 +222,9 @@ async function initDb(): Promise<PGlite> {
 
   const productsManagementMigration = await fs.readFile(PRODUCTS_MANAGEMENT_MIGRATION_PATH, "utf8");
   await db.exec(productsManagementMigration);
+
+  const expensesMigration = await fs.readFile(EXPENSES_MIGRATION_PATH, "utf8");
+  await db.exec(expensesMigration);
 
   await db.exec(`
     create table if not exists public.local_auth_users (
@@ -1036,6 +1045,37 @@ export async function localDeleteProduct(
   }
 }
 
+export async function localAddExpense(
+  userId: string,
+  input: CreateExpenseInput,
+): Promise<ExpenseRow> {
+  await assertRole(userId, ["ADMIN"]);
+  const db = await getLocalDb();
+  try {
+    const result = await db.query(
+      `insert into public.expenses
+         (category, supplier, amount, remark, expense_date, added_by)
+       values ($1, $2, $3, $4, $5::timestamptz, $6)
+       returning *`,
+      [
+        input.category,
+        input.supplier,
+        input.amount,
+        input.remark ?? null,
+        input.expenseDate ?? new Date().toISOString(),
+        userId,
+      ],
+    );
+    if (!result.rows[0]) {
+      throw new PosActionError("EMPTY_RESULT", "Expense was not saved.");
+    }
+    return serialize<ExpenseRow>(result.rows[0]);
+  } catch (error) {
+    if (error instanceof PosActionError) throw error;
+    throw normalizeDatabaseError(error as { message?: string });
+  }
+}
+
 export async function localGetDeliverySettings(): Promise<DeliverySettingsRow> {
   const db = await getLocalDb();
   const result = await db.query(
@@ -1076,6 +1116,15 @@ export async function localLoadDashboardData(
       "select * from public.order_audit_events order by created_at desc limit 100",
     ),
   ]);
+
+  // Expenses are Master Admin P&L data. Non-admin dashboard payloads never
+  // receive expense rows, even in local mode.
+  const expensesResult =
+    actor.role === "ADMIN"
+      ? await db.query(
+          "select * from public.expenses order by expense_date desc, created_at desc limit 100",
+        )
+      : { rows: [] as AnyRow[] };
 
   const users = serialize<AppUserRow[]>(usersResult.rows);
   const userMap = new Map(users.map((user) => [user.id, user]));
@@ -1135,6 +1184,7 @@ export async function localLoadDashboardData(
     customers,
     orders,
     products: serialize<ProductRow[]>(productsResult.rows),
+    expenses: serialize<ExpenseRow[]>(expensesResult.rows),
     categories: serialize<CategoryRow[]>(categoriesResult.rows),
     settings: serialize<DeliverySettingsRow>(settingsResult.rows[0]),
     transitions: serialize<OrderStatusTransitionRow[]>(transitionsResult.rows),
