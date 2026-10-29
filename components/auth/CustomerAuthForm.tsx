@@ -265,6 +265,13 @@ export default function CustomerAuthForm({
                   >
                     Sign in with an email code
                   </Link>
+                  {" · "}
+                  <Link
+                    href={`/customer/quick-login?next=${encodeURIComponent(nextPath)}`}
+                    className="hover:underline"
+                  >
+                    Quick Sign In
+                  </Link>
                 </p>
               </form>
             ) : phase === "verify" ? (

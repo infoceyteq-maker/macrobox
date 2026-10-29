@@ -15,6 +15,12 @@ import { notify } from "@/lib/ui/toast";
 interface LeadRegistrationProps {
   /** Where to continue after the OTP is verified. Defaults to the menu. */
   nextPath?: string;
+  /**
+   * `quick` is the streamlined Quick Sign In surface: name + phone, optional
+   * email, no delivery-city field, and continuation to the profile. Phone
+   * ownership is still proven with an OTP in both variants.
+   */
+  variant?: "registration" | "quick";
 }
 
 const inputClass = cn(NEU.input, "px-5 py-4");
@@ -29,8 +35,12 @@ type Step = "details" | "otp";
  * created; the optional email stays an unverified lead contact until the
  * customer confirms it later from My Profile.
  */
-export default function LeadRegistration({ nextPath = "/" }: LeadRegistrationProps) {
+export default function LeadRegistration({
+  nextPath = "/",
+  variant = "registration",
+}: LeadRegistrationProps) {
   const router = useRouter();
+  const isQuick = variant === "quick";
 
   const [step, setStep] = useState<Step>("details");
   const [name, setName] = useState("");
@@ -121,7 +131,7 @@ export default function LeadRegistration({ nextPath = "/" }: LeadRegistrationPro
             className="mx-auto h-auto w-[200px] object-contain"
           />
           <p className="mt-4 text-sm font-medium text-[#59645e]">
-            Premium Healthy Diet Delivery
+            {isQuick ? "Quick Sign In" : "Premium Healthy Diet Delivery"}
           </p>
         </div>
 
@@ -190,6 +200,7 @@ export default function LeadRegistration({ nextPath = "/" }: LeadRegistrationPro
               </span>
             </div>
 
+{!isQuick ? (
             <div className="relative flex flex-col gap-2">
               <label htmlFor="lead-location" className={labelClass}>
                 Delivery Location <span className="font-medium text-[#7b857f]">(optional)</span>
@@ -241,12 +252,14 @@ export default function LeadRegistration({ nextPath = "/" }: LeadRegistrationPro
               ) : null}
             </div>
 
+            ) : null}
+
             <button
               type="submit"
               disabled={isPending}
               className={cn(NEU.buttonPrimary, "mt-2 w-full py-4")}
             >
-              {isPending ? "Processing..." : "Get Started"}
+              {isPending ? "Processing..." : isQuick ? "Login Now" : "Get Started"}
             </button>
 
             <p className="text-center text-xs font-semibold text-[#5f7b64]">
@@ -289,7 +302,7 @@ export default function LeadRegistration({ nextPath = "/" }: LeadRegistrationPro
               disabled={isPending || otpCode.length !== 6}
               className={cn(NEU.buttonPrimary, "mt-2 w-full py-4")}
             >
-              {isPending ? "Verifying..." : "Verify & Enter Menu"}
+              {isPending ? "Verifying..." : isQuick ? "Verify & Go to Profile" : "Verify & Enter Menu"}
             </button>
 
             <div className="flex flex-wrap items-center justify-between gap-3 text-sm font-bold text-[#5f7b64]">
