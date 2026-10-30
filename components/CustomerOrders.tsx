@@ -234,7 +234,13 @@ export default function CustomerOrders({ initialData }: { initialData: Dashboard
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/" className={secondary}>
-              Catalog
+              Menu
+            </Link>
+            <Link href="/cart" className={secondary}>
+              Cart
+            </Link>
+            <Link href="/orders" className={secondary}>
+              Track Orders
             </Link>
             <Link href="/profile" className={secondary}>
               Profile

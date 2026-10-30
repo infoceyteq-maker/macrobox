@@ -5,15 +5,20 @@ import { headers } from "next/headers";
 import { runAction } from "@/lib/pos/action-result";
 import { isLocalMode } from "@/lib/pos/config";
 import {
+  CUSTOMER_WHATSAPP_CHANNEL,
   emailOtpRequestSchema,
   emailOtpVerifySchema,
   leadOtpRequestSchema,
   leadOtpVerifySchema,
   safeNextPath,
+  whatsappOtpRequestSchema,
+  whatsappOtpVerifySchema,
   type CustomerAuthSuccess,
   type CustomerOtpSendResult,
   type EmailOtpSendResult,
   type LeadProfileDetails,
+  type WhatsappOtpRequestInput,
+  type WhatsappOtpVerifyInput,
 } from "@/lib/pos/customer-auth";
 import {
   applyCustomerLeadDetails,
@@ -332,6 +337,127 @@ export async function verifyCustomerPhoneOtpAction(input: {
     } catch {
       // Intentionally ignored — see note above.
     }
+    revalidatePath("/", "layout");
+
+    return {
+      userId: data.user.id,
+      email: data.user.email ?? "",
+      phone: data.user.phone ?? parsed.phone,
+    } satisfies CustomerAuthSuccess;
+  });
+}
+
+function mapWhatsAppOtpSendError(message: string): PosActionError {
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("whatsapp") ||
+    normalized.includes("twilio") ||
+    normalized.includes("provider") ||
+    normalized.includes("sms") ||
+    normalized.includes("unable to send") ||
+    normalized.includes("error sending") ||
+    normalized.includes("channel")
+  ) {
+    return new PosActionError(
+      "WHATSAPP_PROVIDER_NOT_CONFIGURED",
+      "WhatsApp verification is not configured yet. Please add the WhatsApp sender in Supabase Auth and try again.",
+    );
+  }
+  return new PosActionError("WHATSAPP_OTP_SEND_FAILED", message);
+}
+
+async function assertCustomerRole(
+  userId: string,
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { data: profile } = await admin
+    .from("app_users")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profile && profile.role !== "CUSTOMER") {
+    await supabase.auth.signOut();
+    throw new PosActionError(
+      "STAFF_ACCOUNT",
+      "This number belongs to an internal account. Please use the direct staff portal sign-in instead.",
+    );
+  }
+}
+
+/**
+ * Baduma.sl customer step 1: ask Supabase Auth to deliver a 6-digit OTP to
+ * the customer's WhatsApp number. Supabase creates the Auth user when OTP
+ * verification succeeds; no password or upfront profile form is collected.
+ */
+export async function sendCustomerWhatsAppOtpAction(
+  input: WhatsappOtpRequestInput,
+): Promise<ActionResult<CustomerOtpSendResult>> {
+  return runAction(async () => {
+    const parsed = whatsappOtpRequestSchema.parse(input);
+
+    if (isLocalMode()) {
+      return localSendPhoneOtp(parsed.phone, {
+        location: undefined,
+      });
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      phone: parsed.phone,
+      options: {
+        shouldCreateUser: true,
+        channel: CUSTOMER_WHATSAPP_CHANNEL,
+        data: {
+          phone: parsed.phone,
+          signup_source: "customer_whatsapp_otp",
+          otp_channel: CUSTOMER_WHATSAPP_CHANNEL,
+        },
+      },
+    });
+
+    if (error) throw mapWhatsAppOtpSendError(error.message);
+    return { phone: parsed.phone, otpSent: true } satisfies CustomerOtpSendResult;
+  });
+}
+
+/**
+ * Baduma.sl customer step 2: verify the WhatsApp OTP, establish the Supabase
+ * session, auto-create/repair the base customer profile, and let the UI send
+ * the customer straight to My Profile to complete name/address later.
+ */
+export async function verifyCustomerWhatsAppOtpAction(
+  input: WhatsappOtpVerifyInput,
+): Promise<ActionResult<CustomerAuthSuccess>> {
+  return runAction(async () => {
+    const parsed = whatsappOtpVerifySchema.parse(input);
+
+    if (isLocalMode()) {
+      const user = await localVerifyPhoneOtp(parsed.phone, parsed.token);
+      await setLocalSession(user.userId);
+      revalidatePath("/", "layout");
+      return user;
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone: parsed.phone,
+      token: parsed.token,
+      // Supabase verifies phone OTPs with the `sms` type even when the code
+      // was delivered through the WhatsApp channel.
+      type: "sms",
+    });
+
+    if (error || !data.user) {
+      throw new PosActionError(
+        "INVALID_WHATSAPP_OTP",
+        "That WhatsApp code is invalid or has expired. Please request a new code.",
+      );
+    }
+
+    await ensureCustomerProfileForUser(data.user);
+    await assertCustomerRole(data.user.id, supabase);
     revalidatePath("/", "layout");
 
     return {

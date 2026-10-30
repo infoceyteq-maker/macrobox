@@ -9,7 +9,7 @@ Canonical production origin: `https://macrobox-pos-live.vercel.app`
 | Surface | URL | Authentication |
 | --- | --- | --- |
 | Customer digital menu | `https://macrobox-pos-live.vercel.app/` | Public browsing; no internal system links |
-| Customer registration / sign-in | `https://macrobox-pos-live.vercel.app/customer/login` | Passwordless phone OTP (same flow creates new accounts) |
+| Customer sign-in | `https://macrobox-pos-live.vercel.app/customer/login` | WhatsApp OTP only; verification auto-creates the customer profile and redirects to Profile |
 | Customer profile | `https://macrobox-pos-live.vercel.app/profile` | Signed-in customer; optional name, address, email magic link |
 | Master Admin login | `https://macrobox-pos-live.vercel.app/admin/login` | Pre-provisioned Admin only; no registration |
 | Master Admin panel | `https://macrobox-pos-live.vercel.app/admin` | `ADMIN` |
@@ -38,14 +38,14 @@ The POS tables remain in the isolated `macrobox_pos` schema. `202610270008_expos
 
 ## Supabase Auth
 
-- Customers use **passwordless phone OTP** as the primary sign-in. `sendCustomerPhoneOtpAction()` calls Supabase `signInWithOtp({ phone, channel: 'sms' })`; `verifyCustomerPhoneOtpAction()` calls `verifyOtp({ phone, token, type: 'sms' })` and creates the session.
-- The same flow registers new customers automatically. No password, name, or email is collected upfront.
+- Customers use **passwordless WhatsApp OTP** as the only customer sign-in. `sendCustomerWhatsAppOtpAction()` calls Supabase `signInWithOtp({ phone, channel: 'whatsapp' })`; `verifyCustomerWhatsAppOtpAction()` calls `verifyOtp({ phone, token, type: 'sms' })` (Supabase verifies phone OTPs with the `sms` type even when delivery is WhatsApp) and creates the session.
+- The same flow registers new customers automatically. No password, name, email, or delivery address is collected upfront.
 - After verification, `ensureCustomerProfileForUser()` calls the service-role RPC `ensure_customer_profile()` so a `CUSTOMER` row exists in `macrobox_pos.app_users` before the first authenticated query.
 - Customers are redirected to `/profile`, where they can optionally add Name, Delivery Address, Delivery Notes, and an Email. `update_customer_profile()` is a customer-scoped RPC that cannot change role, status, salary, or another user's row.
 - Optional email verification uses `supabase.auth.updateUser({ email }, { emailRedirectTo })`. `/auth/callback` exchanges the PKCE code or token hash, syncs the profile, and returns to `/profile`.
 - The 202610270010 migration adds `delivery_address`, `delivery_notes`, `profile_completed_at`, the profile RPCs, and an Auth-user update trigger.
-- The local PGlite preview uses a fixed OTP `123456` and attaches optional emails immediately; no real SMS is sent in preview.
-- **Production SMS requirement:** a real SMS provider (for example Twilio, MessageBird, Vonage, or Textlocal) must be configured in the Supabase Auth dashboard. Provider credentials are not stored in this repository or Vercel. Without them, `signInWithOtp` will return an SMS-provider error; the UI surfaces this instead of inventing a code.
+- The local PGlite preview uses a fixed OTP `123456`; no real WhatsApp message is sent in preview.
+- **Production WhatsApp requirement:** Supabase Auth Phone must have a WhatsApp-capable sender configured. Supabase documents the WhatsApp channel for Twilio WhatsApp senders; provider credentials/sender details are configured in Supabase/Twilio, never stored in this repository or Vercel. Without that configuration, `signInWithOtp` returns a provider error and the UI surfaces a setup message instead of inventing a code.
 - Supabase Auth `site_url` and redirect allow-list include the production Vercel origin, `/auth/callback`, and Vercel preview patterns.
 
 ## Master Admin
@@ -79,5 +79,5 @@ The deployment continues to use the isolated `macrobox_pos` schema on the connec
 2. Configure the approved product prices in the Admin panel; `0.00` still blocks real charging assumptions.
 3. Replace the simulated driver map with an approved map/GPS provider.
 4. Add verified salary/expense and nutrition data before publishing derived claims.
-5. Configure the production SMS provider credentials in Supabase Auth so live phone OTP messages are delivered.
+5. Configure the production Twilio WhatsApp sender/credentials in Supabase Auth so live WhatsApp OTP messages are delivered, then test with a real Sri Lankan WhatsApp number.
 6. Enable CAPTCHA and production mailer settings when available.

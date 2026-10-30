@@ -9,9 +9,8 @@ import { cn, NEU } from "@/components/ui/neu";
 const NAV = [
   { href: "/", label: "Menu" },
   { href: "/cart", label: "Cart" },
-  { href: "/orders", label: "Track" },
+  { href: "/orders", label: "Track Orders" },
   { href: "/profile", label: "Profile" },
-  { href: "/customer/login", label: "Sign in" },
 ];
 
 interface PortalShellProps {
@@ -46,7 +45,7 @@ export default function PortalShell({ title, subtitle, actions, children }: Port
           {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
         </header>
 
-        <nav className={cn(NEU.cardSmall, "flex gap-1 overflow-x-auto p-2")} aria-label="MacroBox sections">
+        <nav className={cn(NEU.cardSmall, "flex gap-1 overflow-x-auto p-2")} aria-label="Customer">
           {NAV.map((item) => {
             const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
             return (

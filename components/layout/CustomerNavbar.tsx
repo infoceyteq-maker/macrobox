@@ -7,23 +7,14 @@ import { useEffect, useState } from "react";
 
 import { getCurrentActorAction } from "@/app/actions/pos";
 import { useCart } from "@/components/cart/cart-context";
-import { CUSTOMER_CONTACT } from "@/lib/brand";
 import type { AppUserRow } from "@/lib/pos/types";
 import { cn, NEU } from "@/components/ui/neu";
 
 const NAV_LINKS = [
   { href: "/", label: "Menu" },
   { href: "/cart", label: "Cart" },
-  { href: "/orders", label: "Track My Orders" },
-  { href: "/profile", label: "My Profile" },
-] as const;
-
-const SIDEBAR_ACCOUNT_LINKS = [
-  { href: "/profile", label: "My Profile" },
-  { href: "/settings", label: "Settings" },
-  { href: "/help", label: "Help" },
-  { href: "/loyalty", label: "Loyalty Program Benefits" },
-  { href: "/information", label: "Information" },
+  { href: "/orders", label: "Track Orders" },
+  { href: "/profile", label: "Profile" },
 ] as const;
 
 function initialsFor(name: string | null | undefined) {
@@ -131,17 +122,7 @@ export default function CustomerNavbar() {
                   ) : null}
                 </Link>
               ))}
-              <Link href="/customer/login" className={cn(NEU.buttonPrimary, "px-4 py-2.5 text-center text-sm")}>
-                Sign In
-              </Link>
             </nav>
-
-            <Link
-              href="/customer/login"
-              className={cn(NEU.buttonPrimary, "ml-auto px-4 py-2.5 text-center text-sm md:hidden")}
-            >
-              Sign In
-            </Link>
           </div>
 
           <nav aria-label="Customer mobile" className="flex gap-2 overflow-x-auto pb-3 lg:hidden">
@@ -211,27 +192,18 @@ export default function CustomerNavbar() {
                   {customer?.name ?? "Guest customer"}
                 </span>
                 <span className="mt-1 block text-[11px] font-semibold uppercase tracking-wider text-[#527a58]">
-                  Email
+                  WhatsApp
                 </span>
                 <span className="block break-all text-xs leading-5 text-[#5f6d65]">
-                  {customer?.email ?? "Email not linked"}
+                  {customer?.phone ?? "Open Profile to continue with WhatsApp"}
                 </span>
-                <span className="block text-xs leading-5 text-[#5f6d65]">
-                  {customer?.phone ?? "Sign in to view your profile"}
-                </span>
+                {customer?.email ? (
+                  <span className="block break-all text-xs leading-5 text-[#5f6d65]">
+                    {customer.email}
+                  </span>
+                ) : null}
               </span>
             </Link>
-
-            {!customer ? (
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <Link href="/customer/login" className={cn(NEU.buttonPrimary, "text-center")}>
-                  Sign In
-                </Link>
-                <Link href="/customer/register" className={cn(NEU.button, "text-center")}>
-                  Register
-                </Link>
-              </div>
-            ) : null}
 
             <nav aria-label="Browse MacroBox" className="mt-7">
               <p className="px-1 text-[11px] font-bold uppercase tracking-[0.22em] text-[#6f7a74]">Browse</p>
@@ -251,29 +223,6 @@ export default function CustomerNavbar() {
               </div>
             </nav>
 
-            <nav aria-label="Customer account" className="mt-7">
-              <p className="px-1 text-[11px] font-bold uppercase tracking-[0.22em] text-[#6f7a74]">Account</p>
-              <div className="mt-3 grid gap-2">
-                {SIDEBAR_ACCOUNT_LINKS.map((item) => (
-                  <Link key={item.href} href={item.href} className={sidebarLinkClass(item.href)}>
-                    <span>{item.label}</span>
-                    <span aria-hidden="true">→</span>
-                  </Link>
-                ))}
-              </div>
-            </nav>
-
-            <div className={cn(NEU.inset, "mt-auto px-4 py-4 pt-4 text-sm")}>
-              <p className="font-display font-bold">Need help ordering?</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <a href={CUSTOMER_CONTACT.phoneHref} className={cn(NEU.buttonPrimary, "px-3 py-2 text-xs")}>
-                  Call {CUSTOMER_CONTACT.phoneDisplay}
-                </a>
-                <a href={CUSTOMER_CONTACT.emailHref} className={cn(NEU.button, "px-3 py-2 text-xs")}>
-                  Email us
-                </a>
-              </div>
-            </div>
           </aside>
         </div>
       ) : null}

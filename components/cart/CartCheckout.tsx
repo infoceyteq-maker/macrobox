@@ -242,7 +242,7 @@ export default function CartCheckout() {
                 href="/customer/login?next=/cart"
                 className={cn(NEU.buttonPrimary, "block w-full text-center")}
               >
-                Continue with phone to checkout
+                Continue with WhatsApp to checkout
               </Link>
               {isLocalMode() ? (
                 <button
