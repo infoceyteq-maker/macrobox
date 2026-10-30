@@ -6,7 +6,7 @@ This map shows the customer, admin, driver, billing, print, and notification lay
 app/
   actions/
     auth.ts                    # local/Supabase staff sign-in, sign-out
-    customer-auth.ts           # passwordless phone OTP send/verify actions
+    customer-auth.ts           # WhatsApp OTP send/verify + legacy server auth actions
     customer-profile.ts        # customer profile update + optional email magic link
     employees.ts               # Admin-only employee profile/role/status updates
     pos.ts                     # orders, lifecycle, tiered transport activation, menu, delivery, settlement
@@ -20,8 +20,10 @@ app/
   orders/page.tsx              # customer tracking page
   pos/page.tsx                 # unified POS dashboard
   login/page.tsx               # generic employee sign-in (no registration)
-  customer/login/page.tsx      # passwordless phone OTP sign-in / registration
-  customer/register/page.tsx   # same passwordless phone OTP flow
+  customer/login/page.tsx      # Baduma.sl WhatsApp OTP sign-in (auto-creates profile)
+  customer/register/page.tsx   # redirects to WhatsApp OTP sign-in
+  customer/quick-login/page.tsx # redirects to WhatsApp OTP sign-in
+  customer/email-login/page.tsx # redirects to WhatsApp OTP sign-in
   profile/page.tsx             # optional customer profile management
   auth/callback/route.ts       # email magic-link / token_hash callback
   admin/login/page.tsx         # Master Admin login (ADMIN only)
@@ -32,7 +34,7 @@ app/
 
 components/
   auth/
-    CustomerAuthForm.tsx       # passwordless phone OTP UI, no internal links
+    WhatsAppOtpLogin.tsx       # dark neumorphic WhatsApp OTP UI, customer links only
     StaffLoginForm.tsx         # role-specific employee login, no self-registration
   customer/
     CustomerProfile.tsx        # optional name/address/email profile management
@@ -91,7 +93,7 @@ supabase/migrations/
 
 ## Production routing
 
-- Customer: `/`, `/cart`, `/customer/login`, `/customer/register`, `/profile`, `/orders`, `/bill/[orderId]`, `/auth/callback`.
+- Customer: `/`, `/cart`, `/customer/login`, `/profile`, `/orders`, `/bill/[orderId]`, `/auth/callback`. `/customer/register`, `/customer/quick-login`, and `/customer/email-login` redirect to `/customer/login`.
 - Master Admin: `/admin/login` → `/admin`.
 - Front Desk / POS: `/frontdesk/login` → `/pos`.
 - Driver: `/driver/login` → `/driver`.
@@ -106,4 +108,5 @@ supabase/migrations/
 - Print output is black-and-white, 80mm, shadow-free, and isolated with `.thermal-print`.
 - The approved LKR distance-tiered transport rate is implemented exactly in `lib/pos/transport.ts` and SQL. No real meal prices, salaries, addresses, health claims, or Google Maps key were invented.
 - Product `0.00` remains a “price pending” placeholder; Admin must enter approved values before production.
-- Public customer navigation contains only customer-relevant links. Staff/Admin/Driver routes are not linked from customer pages.
+- Public customer navigation contains only Menu, Cart, Track Orders, and Profile. Master Admin, Staff/POS, Kitchen, and Driver routes are not linked from customer pages and remain direct-URL, role-protected surfaces.
+- The Baduma.sl WhatsApp login surface uses a scoped dark neumorphic treatment: near-black background, #FACC15/#FFD700 yellow actions, layered extruded/inset shadows, and no customer password or upfront registration form.

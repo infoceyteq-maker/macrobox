@@ -257,7 +257,7 @@ All actions return `ActionResult<T>` (`{ ok: true, data }` or `{ ok: false, code
 
    Migration `202610270009_tiered_transport_rate.sql` stores the exact approved tiers and activates them. Admin can call `clearTransportRateAction()` to disable new transport calculations without changing historical orders, then reactivate the approved tiers at any time.
 
-5. Configure a production SMS provider in Supabase Auth (Twilio / MessageBird / Vonage / Textlocal). Customer sign-in uses `signInWithOtp({ phone })`; without provider credentials, live SMS codes cannot be delivered. Credentials are not stored in the repository or Vercel. Local PGlite preview uses fixed OTP `123456`.
+5. Configure a production WhatsApp sender for Supabase Auth Phone (the WhatsApp channel requires a WhatsApp-capable provider configuration, documented by Supabase for Twilio WhatsApp senders). Customer sign-in uses `signInWithOtp({ phone, options: { channel: "whatsapp" } })` and verifies with `verifyOtp({ phone, token, type: "sms" })`; without the sender/credentials, live WhatsApp codes cannot be delivered. Credentials are not stored in the repository or Vercel. Local PGlite preview uses fixed OTP `123456`.
 
 6. Add categories/products with `createCategoryAction()` and `upsertProductAction()` using verified data. Toggle visibility with `setProductVisibilityAction()`.
 

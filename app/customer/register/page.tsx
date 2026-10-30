@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import LeadRegistration from "@/components/auth/LeadRegistration";
+import { redirect } from "next/navigation";
 import { safeNextPath } from "@/lib/pos/customer-auth";
 
 export const metadata: Metadata = {
-  title: "MacroBox | Customer Registration",
-  description: "Register with your name and phone number, verified by a one-time SMS code.",
+  title: "Baduma.sl | WhatsApp Sign In",
+  description: "Customer accounts are created automatically after WhatsApp OTP verification.",
 };
 
 export default async function CustomerRegisterPage({
@@ -13,5 +13,5 @@ export default async function CustomerRegisterPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const { next } = await searchParams;
-  return <LeadRegistration nextPath={safeNextPath(next, "/")} />;
+  redirect(`/customer/login?next=${encodeURIComponent(safeNextPath(next, "/profile"))}`);
 }

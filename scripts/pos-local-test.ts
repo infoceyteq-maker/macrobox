@@ -1,4 +1,11 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import {
+  CUSTOMER_WHATSAPP_CHANNEL,
+  normalizePhone,
+  whatsappOtpRequestSchema,
+  whatsappOtpVerifySchema,
+} from "../lib/pos/customer-auth";
 import {
   getLocalDb,
   LOCAL_DEMO_USERS,
@@ -438,6 +445,59 @@ async function main() {
     salaryStructure: {},
   });
   check("Admin employee management update", employee.name === "MacroBox Customer Verified");
+
+  check("WhatsApp is the canonical customer OTP channel", CUSTOMER_WHATSAPP_CHANNEL === "whatsapp");
+  check(
+    "WhatsApp OTP normalizes Sri Lankan local numbers",
+    whatsappOtpRequestSchema.parse({ phone: "077 123 4567" }).phone === "+94771234567" &&
+      normalizePhone("+94 77 123 4567") === "+94771234567",
+  );
+  let whatsappCodeLengthBlocked = false;
+  try {
+    whatsappOtpVerifySchema.parse({ phone: "+94771234567", token: "12345" });
+  } catch {
+    whatsappCodeLengthBlocked = true;
+  }
+  check("WhatsApp OTP requires exactly six digits", whatsappCodeLengthBlocked);
+
+  const customerNavbarSource = await readFile(
+    new URL("../components/layout/CustomerNavbar.tsx", import.meta.url),
+    "utf8",
+  );
+  const portalShellSource = await readFile(
+    new URL("../components/layout/PortalShell.tsx", import.meta.url),
+    "utf8",
+  );
+  const customerNavSources = `${customerNavbarSource}\n${portalShellSource}`;
+  check(
+    "Public customer navigation is Menu, Cart, Track Orders, Profile only",
+    ["Menu", "Cart", "Track Orders", "Profile"].every((label) =>
+      customerNavSources.includes(`label: "${label}"`),
+    ) &&
+      !/href: "\/(?:settings|help|loyalty|information)"|label: "(?:Sign in|Register|Settings|Help)"/.test(
+        customerNavSources,
+      ),
+  );
+  check(
+    "Public customer navigation exposes no internal portal routes",
+    !/href: "\/(?:admin|pos|driver|frontdesk|kitchen)(?:\/|")|href="\/customer\/(?:login|register)"/.test(
+      customerNavSources,
+    ),
+  );
+
+  const whatsappLoginSource = await readFile(
+    new URL("../components/auth/WhatsAppOtpLogin.tsx", import.meta.url),
+    "utf8",
+  );
+  check(
+    "Customer login is WhatsApp OTP only and redirects to Profile",
+    whatsappLoginSource.includes("sendCustomerWhatsAppOtpAction") &&
+      whatsappLoginSource.includes("verifyCustomerWhatsAppOtpAction") &&
+      whatsappLoginSource.includes('"/profile"') &&
+      !/customer\/(?:register|email-login|quick-login)|type="password"|Google/.test(
+        whatsappLoginSource,
+      ),
+  );
 
   const otpPhone = "+94000000123";
   const otpSend = await localSendPhoneOtp(otpPhone);

@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import CustomerEmailOtpForm from "@/components/auth/CustomerEmailOtpForm";
+import { redirect } from "next/navigation";
 import { safeNextPath } from "@/lib/pos/customer-auth";
 
 export const metadata: Metadata = {
-  title: "MacroBox | Customer Email Sign In",
-  description: "Passwordless customer sign-in with a one-time email code.",
+  title: "Baduma.sl | WhatsApp Sign In",
+  description: "Customer sign-in is WhatsApp OTP only — no email login form.",
 };
 
 export default async function CustomerEmailLoginPage({
@@ -13,5 +13,5 @@ export default async function CustomerEmailLoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const { next } = await searchParams;
-  return <CustomerEmailOtpForm nextPath={safeNextPath(next, "/profile")} />;
+  redirect(`/customer/login?next=${encodeURIComponent(safeNextPath(next, "/profile"))}`);
 }

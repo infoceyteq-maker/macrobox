@@ -131,7 +131,8 @@ export default function CustomerProfile({
             ) : null}
             <Link href="/" className={cn(NEU.button, "text-center")}>Menu</Link>
             <Link href="/cart" className={cn(NEU.button, "text-center")}>Cart</Link>
-            <Link href="/orders" className={cn(NEU.button, "text-center")}>Track</Link>
+            <Link href="/orders" className={cn(NEU.button, "text-center")}>Track Orders</Link>
+            <Link href="/profile" className={cn(NEU.button, "text-center")}>Profile</Link>
             <button type="button" onClick={signOut} className={NEU.button}>
               Sign out
             </button>

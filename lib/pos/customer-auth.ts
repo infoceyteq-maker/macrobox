@@ -6,12 +6,17 @@ const EMAIL_IDENTIFIER = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Fixed OTP used only by the sandboxed PGlite preview. Never sent in production. */
 export const LOCAL_CUSTOMER_OTP = "123456";
 
-/** Keep only the leading plus and digits, so UI formatting never affects login. */
+/**
+ * Keep only the leading plus and digits, so UI formatting never affects login.
+ * Sri Lankan local numbers such as 077… are converted to +94… for Supabase.
+ */
 export function normalizePhone(value: string): string {
   const trimmed = value.trim();
-  const hasPlus = trimmed.startsWith("+");
   const digits = trimmed.replace(/\D/g, "");
-  return hasPlus ? `+${digits}` : `+${digits}`;
+  if (trimmed.startsWith("+")) return `+${digits}`;
+  if (digits.startsWith("94")) return `+${digits}`;
+  if (digits.startsWith("0")) return `+94${digits.slice(1)}`;
+  return `+${digits}`;
 }
 
 export function isEmailIdentifier(value: string): boolean {
@@ -45,6 +50,26 @@ export const phoneOtpVerifySchema = z.object({
     .string()
     .trim()
     .regex(/^\d{6}$/, "Enter the 6-digit code from your SMS."),
+});
+
+export const WHATSAPP_OTP_LENGTH = 6;
+export const CUSTOMER_WHATSAPP_CHANNEL = "whatsapp" as const;
+
+/**
+ * Canonical Baduma.sl/MacroBox customer login. The phone number is the only
+ * credential input; Supabase creates the Auth user on first OTP request and
+ * the verified session is provisioned into the POS customer profile table.
+ */
+export const whatsappOtpRequestSchema = z.object({
+  phone: phoneOtpRequestSchema.shape.phone,
+});
+
+export const whatsappOtpVerifySchema = z.object({
+  phone: phoneOtpRequestSchema.shape.phone,
+  token: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "Enter the 6-digit code from WhatsApp."),
 });
 
 /** Sri Lankan delivery cities offered by the lead-registration autocomplete. */
@@ -127,6 +152,8 @@ export const customerProfileSchema = z.object({
 
 export type PhoneOtpRequestInput = z.infer<typeof phoneOtpRequestSchema>;
 export type PhoneOtpVerifyInput = z.infer<typeof phoneOtpVerifySchema>;
+export type WhatsappOtpRequestInput = z.infer<typeof whatsappOtpRequestSchema>;
+export type WhatsappOtpVerifyInput = z.infer<typeof whatsappOtpVerifySchema>;
 export type LeadOtpRequestInput = z.infer<typeof leadOtpRequestSchema>;
 export type LeadOtpVerifyInput = z.infer<typeof leadOtpVerifySchema>;
 export type EmailLinkInput = z.infer<typeof emailLinkSchema>;

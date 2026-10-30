@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import CustomerAuthForm from "@/components/auth/CustomerAuthForm";
+import WhatsAppOtpLogin from "@/components/auth/WhatsAppOtpLogin";
 import { safeNextPath } from "@/lib/pos/customer-auth";
 
 export const metadata: Metadata = {
-  title: "MacroBox | Customer Phone Sign In",
-  description: "Passwordless customer sign-in with a one-time SMS code.",
+  title: "Baduma.sl | WhatsApp Sign In",
+  description: "Passwordless Baduma.sl customer sign-in with a 6-digit WhatsApp code.",
 };
 
 export default async function CustomerLoginPage({
@@ -13,5 +13,5 @@ export default async function CustomerLoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const { next } = await searchParams;
-  return <CustomerAuthForm nextPath={safeNextPath(next, "/profile")} />;
+  return <WhatsAppOtpLogin nextPath={safeNextPath(next, "/profile")} />;
 }
